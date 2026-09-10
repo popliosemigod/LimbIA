@@ -1,0 +1,79 @@
+# =====================================================================
+#  Commitizen - padrao de mensagem de commit do LimbIA
+#
+#  Uso:  cz commit      (monta a mensagem por perguntas)
+#        cz check       (valida uma mensagem ja escrita)
+#
+#  Os tipos sao os mesmos do laboratorio (repositorio Jaspy,
+#  docs/03-git-e-versionamento.md). O escopo aqui e o subsistema da mao.
+#
+#  O tipo `calib` merece atencao especial neste projeto: a calibracao de
+#  pulso de cada servo E o projeto. Todo numero medido com o servo tester
+#  ou com a mao montada entra com esse tipo, e o valor vai no corpo.
+# =====================================================================
+
+[tool.commitizen]
+name = "cz_customize"
+version = "0.1.0"
+tag_format = "v$version"
+update_changelog_on_bump = true
+changelog_file = "CHANGELOG.md"
+
+[tool.commitizen.customize]
+schema = "<tipo>(<subsistema>): <descricao no imperativo>"
+schema_pattern = '^(feat|hw|cad|fix|calib|test|doc|infra|chore)\((dedos|gestos|corrente|preensao|calibracao|mecanica|emg|web|firmware|hardware|docs|repo)\)!?: .{4,80}(\n[\s\S]*)?$'
+message_template = "{{tipo}}({{subsistema}}): {{descricao}}{% if corpo %}\n\n{{corpo}}{% endif %}"
+example = "calib(dedos): ajustar pulso tensionado do JULGADOR para 1980 us medido no servo tester"
+info = """
+Tipos:  feat  hw  cad  fix  calib  test  doc  infra  chore
+Escopo: dedos  gestos  corrente  preensao  calibracao  mecanica  emg
+        web  firmware  hardware  docs  repo
+"""
+
+bump_pattern = '^(feat|hw|fix|calib)'
+bump_map = { feat = "MINOR", hw = "MINOR", fix = "PATCH", calib = "PATCH" }
+
+[[tool.commitizen.customize.questions]]
+type = "list"
+name = "tipo"
+message = "Tipo da mudanca"
+choices = [
+  { value = "feat",  name = "feat  - funcionalidade nova" },
+  { value = "hw",    name = "hw    - esquematico, PCB, pinagem" },
+  { value = "cad",   name = "cad   - modelagem 3D, peca da mao ou da ortese" },
+  { value = "fix",   name = "fix   - correcao de comportamento errado" },
+  { value = "calib", name = "calib - pulso ou limiar medido na bancada" },
+  { value = "test",  name = "test  - ensaio, rotina de teste, evidencia" },
+  { value = "doc",   name = "doc   - documentacao" },
+  { value = "infra", name = "infra - ambiente, toolchain, automacao" },
+  { value = "chore", name = "chore - manutencao sem efeito no comportamento" },
+]
+
+[[tool.commitizen.customize.questions]]
+type = "list"
+name = "subsistema"
+message = "Subsistema afetado"
+choices = [
+  { value = "dedos",      name = "dedos      - acionamento dos servos, movimento gradual" },
+  { value = "gestos",     name = "gestos     - tabela de poses e sequencias" },
+  { value = "corrente",   name = "corrente   - sensores ACS712, deteccao de contato" },
+  { value = "preensao",   name = "preensao   - assinatura e classificacao do objeto" },
+  { value = "calibracao", name = "calibracao - console de ajuste e persistencia na NVS" },
+  { value = "mecanica",   name = "mecanica   - tendoes, polias, estrutura" },
+  { value = "emg",        name = "emg        - leitura de sinal muscular (previsto)" },
+  { value = "web",        name = "web        - painel HTTP" },
+  { value = "firmware",   name = "firmware   - estrutura geral, boot, loop" },
+  { value = "hardware",   name = "hardware   - montagem fisica, alimentacao" },
+  { value = "docs",       name = "docs       - documentacao do projeto" },
+  { value = "repo",       name = "repo       - repositorio, CI, hooks" },
+]
+
+[[tool.commitizen.customize.questions]]
+type = "input"
+name = "descricao"
+message = "Descricao no imperativo, minuscula, sem ponto final"
+
+[[tool.commitizen.customize.questions]]
+type = "input"
+name = "corpo"
+message = "Corpo (opcional) - o numero medido, o porque, referencia de datasheet"

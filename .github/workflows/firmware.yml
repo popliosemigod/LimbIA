@@ -1,0 +1,74 @@
+# =====================================================================
+#  CI do LimbIA
+#
+#  Compila o firmware a cada push. O ganho e simples: erro de compilacao
+#  aparece no push, nao na hora em que a placa esta na bancada esperando
+#  gravacao.
+#
+#  Compila os tres ambientes. O `autoteste` entra no CI de proposito: e
+#  ele que exercita a logica da mao, e logica que nao compila no CI
+#  tambem nao roda na bancada.
+#
+#  O job nao precisa de credencial nenhuma - a v0.1 nem usa rede.
+# =====================================================================
+name: firmware
+
+on:
+  push:
+    branches: [main, develop, "feat/**", "exp/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compilar:
+    name: compilar firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # O toolchain do ESP32 passa de 1 GB. Sem cache, cada push gasta
+      # varios minutos so baixando o mesmo compilador.
+      - name: cache do PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: instalar PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: compilar os tres ambientes
+        run: pio run
+
+      - name: tamanho do binario
+        run: pio run --target size | tail -20
+
+  padrao:
+    name: padrao de arquivo e commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: instalar pre-commit
+        run: pip install --upgrade pre-commit commitizen
+
+      - name: rodar os hooks em todo o repositorio
+        run: pre-commit run --all-files --show-diff-on-failure
