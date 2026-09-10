@@ -1,0 +1,14 @@
+{
+  "name": "limbia_mao",
+  "version": "0.1.0",
+  "description": "Logica da mao do LimbIA sem dependencia de Arduino: conversao posicao/pulso com endpoints medidos, tabela de gestos, classificacao de preensao por posicao de contato e diagnostico de tendao frouxo.",
+  "keywords": "protese, mao robotica, servo, propriocepcao",
+  "license": "MIT",
+  "authors": [
+    { "name": "Henrique", "maintainer": true },
+    { "name": "Jaspa" }
+  ],
+  "frameworks": "*",
+  "platforms": "*",
+  "headers": "limbia_mao.h"
+}
