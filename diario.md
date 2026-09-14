@@ -266,14 +266,42 @@ placas com o enlace subindo; o ensaio de ponta a ponta acima.
 
 ---
 
-### Próxima entrada esperada — Primeira junta montada e calibrada
+### 2026-09-14 — Abre a fase de ensaios
 
-**Alvo previsto:** montar um dedo com um servo e um ACS712, calibrar os dois
-pulsos pelo console e medir os três limiares de corrente.
+Daqui em diante o que entra no diário é medida de bancada, não de lógica. O
+roteiro dos seis ensaios, **com as previsões escritas antes de qualquer
+medição**, está em [`docs/07-roteiro-de-bancada.md`](docs/07-roteiro-de-bancada.md):
 
-**Previsão a registrar antes do ensaio:** um MG90S sem carga deve consumir algo
-entre 80 e 150 mA em movimento, e entre 400 e 700 mA quando o dedo encontra um
-obstáculo. Se a diferença medida entre "movendo livre" e "encostou" for menor que
-uns 150 mA, o limiar de contato não vai separar os dois casos de forma confiável —
-e a saída, nesse caso, é medir a **derivada** da corrente em vez do valor
-absoluto.
+1. um dedo se movendo, com cadência controlada;
+2. o mesmo dedo com ACS712 — de onde saem os três limiares de corrente;
+3. a mão inteira, e o **primeiro acerto de campo** do classificador de preensão;
+4. o primeiro eletrodo na pele, e se os limiares de qualidade separam bem de mal
+   posicionado num antebraço de verdade;
+5. a prótese em uso;
+6. gravação pela rede.
+
+A previsão que mais me interessa errar é a do ensaio 3: **3 de 4 objetos**. Todos
+os 100% que este repositório mostra vieram de casos que eu mesmo gerei, e a
+posição dos dedos longos agora é **estimada por tempo**, não medida — é onde o
+erro de campo deve aparecer primeiro.
+
+Antes dela, a do ensaio 2 é a que pode mudar firmware em vez de número: se a
+diferença entre "motor girando livre" e "motor travado" for menor que ~150 mA, o
+limiar absoluto não separa os dois casos, e a saída passa a ser medir a
+**derivada** da corrente.
+
+**Evidência:** nenhuma ainda. É esse o ponto da entrada.
+
+---
+
+### Próxima entrada esperada — Ensaio 1: um dedo, um motor
+
+**Alvo previsto:** montar um dedo com um motor DC no L293D e um ACS712 em série,
+ver o dedo se mover com cadência controlada e medir o tempo de curso dele.
+
+**Previsão a registrar antes do ensaio** — a tabela completa está no
+[roteiro](docs/07-roteiro-de-bancada.md#ensaio-1--um-dedo-um-motor-sem-sensor):
+tempo de ponta a ponta entre 0,8 e 2,0 s em duty 200; motor girando livre entre
+60 e 150 mA; travado contra objeto entre 400 e 900 mA; e o pico de partida — o
+que o arranque cego esconde — de 2 a 4 vezes a corrente livre, durando de 50 a
+200 ms.
