@@ -2,6 +2,11 @@
 
 Este arquivo é carregado automaticamente em toda sessão nova neste repositório.
 
+> **Antes de qualquer coisa:** se existir `CONTEXTO.md` na raiz (fora do git),
+> ler inteiro. É o estado da sessão anterior — o que foi feito, o que falta e
+> por quê. Ao pausar uma tarefa no meio, comitar o progresso e atualizar esse
+> arquivo.
+
 ## O projeto
 
 **LimbIA: mão robótica e órtese**, adaptável a qualquer membro, para treino de

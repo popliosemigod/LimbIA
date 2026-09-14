@@ -8,6 +8,10 @@
 //  Mao robotica e ortese. Sete juntas, quatro sensores de corrente,
 //  um console de calibracao que grava na flash.
 //
+//  Esta e a placa da MAO. Os musculos sao lidos pela outra placa (a do
+//  EMG, src/main_emg.cpp), que manda "abrir" e "fechar" pela rede da
+//  protese. O console serial continua inteiro, para a bancada.
+//
 //  Fusao de dois projetos anteriores:
 //    INOVAWEEK  - a mao impressa, os nomes das juntas, as tabelas de
 //                 pulso e a ideia de deduzir o objeto pela posicao
@@ -28,6 +32,8 @@
 #include "dedos.h"
 #include "memoria.h"
 #include "preensao.h"
+#include "rede.h"
+#include "remoto.h"
 
 // ---- definicao do global declarado em config.h -----------------------
 EstadoMao M;
@@ -95,7 +101,8 @@ static void ajuda() {
   Serial.println(F("   w  gravar na flash          f  voltar ao padrao de fabrica"));
   Serial.println(F("  DIVERSOS"));
   Serial.println(F("   s  status      x  desligar as saidas (emergencia)"));
-  Serial.println(F("   e  ligar as saidas          ?  esta ajuda"));
+  Serial.println(F("   e  ligar as saidas          n  rede e enlace com o EMG"));
+  Serial.println(F("   ?  esta ajuda"));
   Serial.println(F("=================================================="));
 }
 
@@ -117,6 +124,29 @@ static void status() {
   }
   Serial.printf("  gestos executados: %lu | juntas com folga: %u\n", (unsigned long)M.movimentos,
                 M.folgas);
+}
+
+static void statusRede() {
+  const Rede::Credenciais& c = Rede::cred();
+  const Remoto::Estado& r    = Remoto::S();
+  Serial.println();
+  Serial.printf("  rede \"%s\" %s | Wi-Fi %s | IP %s\n", c.ssid,
+                c.deFabrica ? "(DE FABRICA)" : "(escolhida pelo cliente)",
+                WiFi.status() == WL_CONNECTED ? "conectado" : "procurando",
+                WiFi.localIP().toString().c_str());
+  Serial.printf("  enlace com o EMG: %s | modo %s | acoes executadas via EMG: %u\n",
+                r.ativo ? "ATIVO" : "sem sinal", limbia::nomeDoModo(r.modo), r.seqAcao);
+  Serial.printf("  enlace caiu %lu vez(es) | OTA %s\n", (unsigned long)r.perdidos,
+                Remoto::emUsoPeloEmg() ? "BLOQUEADO (protese em uso)" : "liberado");
+  Serial.printf("  poses: %s\n", M.posesDaFlash ? "da flash" : "padrao / nao gravadas");
+}
+
+// Durante a gravacao por OTA o loop para. As saidas vao para o estado
+// morto ANTES - e o mesmo aviso do manual do LAD ("desligue a fonte antes
+// de gravar"), resolvido pelo OE do PCA9685 em vez de por procedimento.
+static void aoComecarOta() {
+  Dedos::para();
+  Dedos::ligaSaidas(false);
 }
 
 static void listaCalibracao() {
@@ -240,9 +270,12 @@ static void processaLinha(char* linha) {
     case 'f':
     case 'F':
       Memoria::apaga();
-      Serial.println(F("  calibracao de volta ao padrao de fabrica"));
+      Serial.println(F("  calibracao e poses de volta ao padrao de fabrica (a rede nao muda)"));
       listaCalibracao();
       break;
+
+    case 'n':
+    case 'N': statusRede(); break;
 
     case 's':
     case 'S': status(); break;
@@ -315,9 +348,13 @@ void setup() {
   const bool daFlash = Memoria::carrega();
   Serial.printf("[calib] %s\n",
                 daFlash ? "carregada da flash" : "PADRAO DE FABRICA - calibre antes de montar");
+  Serial.printf("[poses] %s\n", Memoria::carregaPoses() ? "carregadas da flash" : "padrao");
 
   Corr::begin();
 
+  // Os servos vem ANTES do Wi-Fi: o zero dos ACS712 e medido com tudo
+  // parado e em silencio, e o Dedos::begin garante as saidas mortas ate
+  // haver posicao valida em todos os canais.
   if (Dedos::begin()) {
     Serial.println(F("[pca9685] respondeu no I2C"));
   } else {
@@ -329,6 +366,16 @@ void setup() {
     if (Corr::temSensor(i)) Serial.printf(" %s", limbia::nomeDaJunta(i));
   }
   Serial.println();
+
+  Rede::iniciaBotao(PIN_BOTAO);
+  Rede::avisaSegredos();
+  Rede::carrega();
+  Rede::iniciaCliente();
+  Rede::iniciaOta(REDE_HOST_MAO, aoComecarOta);
+  Remoto::begin();
+  Serial.printf("[rede] entrando na rede \"%s\"%s como %s\n", Rede::cred().ssid,
+                Rede::cred().deFabrica ? " (de fabrica)" : "",
+                IPAddress(REDE_IP_MAO).toString().c_str());
 
   ajuda();
 }
@@ -342,12 +389,28 @@ void loop() {
   console();
   telemetria();
 
+  Rede::tickCliente();
+  Remoto::tick();
+  // A mao nao aceita firmware novo enquanto o EMG a comanda: gravar
+  // desliga os servos, e ela soltaria o que estiver segurando.
+  Rede::tickOta(!Remoto::emUsoPeloEmg());
+
+  if (Rede::botaoSegurado(PIN_BOTAO)) {
+    Serial.println(F("[rede] BOOT segurado 10 s - rede de volta ao de fabrica, reiniciando"));
+    Rede::apaga();
+    Serial.flush();
+    ESP.restart();
+  }
+
   // Protecao: corrente acima do limite corta o movimento na hora.
   uint8_t culpada = 0;
   if (Corr::sobrecarga(&culpada)) {
+    if (Dedos::emMovimento()) {
+      Serial.printf("  SOBRECARGA em %s (%u mA) - movimento abortado\n",
+                    limbia::nomeDaJunta(culpada), M.junta[culpada].correnteMa);
+    }
     Dedos::para();
-    Serial.printf("  SOBRECARGA em %s (%u mA) - movimento abortado\n", limbia::nomeDaJunta(culpada),
-                  M.junta[culpada].correnteMa);
+    M.sobrecarga = true;
   }
 
   if (Preensao::pronta()) {

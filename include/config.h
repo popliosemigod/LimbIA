@@ -8,6 +8,8 @@
 
 #include <limbia_mao.h>
 
+#include "config_rede.h"
+
 // ---------------------------------------------------------------------
 //  POR QUE UM DRIVER PWM, E NAO OS PINOS DA PLACA
 //
@@ -51,7 +53,11 @@
 //
 //  Na DevKit V1 de 30 pinos, o ADC1 expoe exatamente SEIS canais - 32,
 //  33, 34, 35, 36 e 39 (o 37 e o 38 existem no chip mas nao saem no
-//  conector). Seis canais para quatro correntes, o EMG e uma reserva.
+//  conector). Quatro para as correntes e duas reservas - o canal que era
+//  do EMG ficou livre quando o EMG ganhou placa propria (config_emg.h).
+//
+//  Esta placa agora tem Wi-Fi ligado (cliente da rede da protese, para o
+//  enlace e o OTA). E a regra do ADC1 que deixa isso sem custo.
 //
 //  Quatro, e nao sete, porque o estoque tem QUATRO ACS712. Os quatro vao
 //  nos dedos longos, que sao os que formam a assinatura do objeto. O
@@ -63,8 +69,8 @@
 #define PIN_CORR_DONCARE  39  // ADC1_CH3 - so entrada
 #define PIN_CORR_FEIO     34  // ADC1_CH6 - so entrada
 #define PIN_CORR_JULGADOR 35  // ADC1_CH7 - so entrada
-#define PIN_EMG           32  // ADC1_CH4 - reservado, sem sensor ainda
-#define PIN_RESERVA_ADC   33  // ADC1_CH5 - livre
+#define PIN_RESERVA_ADC_1 32  // ADC1_CH4 - livre (o EMG foi para a placa propria)
+#define PIN_RESERVA_ADC_2 33  // ADC1_CH5 - livre
 
 // Bit por junta. Mudou o hardware, muda aqui - e o firmware inteiro se
 // ajusta, incluindo a confianca da classificacao.
@@ -75,7 +81,7 @@
 // ---------------------------------------------------------------------
 //  Interface local
 // ---------------------------------------------------------------------
-#define PIN_BOTAO     0   // BOOT: ja tem pull-up, vai ao GND quando pressionado
+#define PIN_BOTAO     0   // BOOT: segurar 10 s volta a rede ao de fabrica
 #define PIN_LED_PLACA 2   // aceso enquanto alguma junta esta em movimento
 #define PIN_BUZZER    13  // opcional - aviso de contato e de falha
 
@@ -145,6 +151,11 @@
 #define NVS_NAMESPACE "limbia"
 #define CALIB_SCHEMA  1
 
+// As duas poses que o EMG comanda ("mao aberta" e "mao fechada") moram
+// na mesma area da calibracao, com versao propria dentro do bloco: o 'f'
+// apaga as duas coisas juntas, que e o que "padrao de fabrica" quer dizer.
+#define POSES_VERSAO 1
+
 // ---------------------------------------------------------------------
 //  Identidade
 // ---------------------------------------------------------------------
@@ -181,6 +192,12 @@ struct EstadoMao {
   uint8_t folgas;       // juntas diagnosticadas com tendao frouxo
 
   uint16_t offsetAdc[limbia::N_JUNTAS];  // zero de cada ACS712, medido no boot
+
+  // As duas poses comandadas pelo EMG. Editadas na tela de ajuste.
+  limbia::Pose poseAberta;
+  limbia::Pose poseFechada;
+  bool posesDaFlash;
+  bool sobrecarga;  // a ultima parada foi por corrente acima do limite
 };
 
 extern EstadoMao M;

@@ -74,7 +74,6 @@ inline void begin() {
     const int p = pinoDaJunta(i);
     if (p >= 0) analogSetPinAttenuation(p, ADC_11db);
   }
-  analogSetPinAttenuation(PIN_EMG, ADC_11db);
   for (uint8_t i = 0; i < limbia::N_JUNTAS; i++) M.offsetAdc[i] = 0;
 }
 

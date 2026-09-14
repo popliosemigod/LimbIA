@@ -40,6 +40,10 @@ evidencias/**/*.wav
 __pycache__/
 *.py[cod]
 .venv/
+.venv-host/
+
+# ---- Estado de trabalho entre sessoes (pessoal, nao e documentacao) ----
+CONTEXTO.md
 
 # ---- Sistema operacional ----
 Thumbs.db
