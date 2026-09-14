@@ -2,6 +2,11 @@
 
 Este arquivo é carregado automaticamente em toda sessão nova neste repositório.
 
+> **Antes de qualquer coisa:** se existir `CONTEXTO.md` na raiz (fora do git),
+> ler inteiro. É o estado da sessão anterior — o que foi feito, o que falta e
+> por quê. Ao pausar uma tarefa no meio, comitar o progresso e atualizar esse
+> arquivo.
+
 ## O projeto
 
 **LimbIA: mão robótica e órtese**, adaptável a qualquer membro, para treino de
@@ -92,14 +97,31 @@ entregue é **"compila e a lógica foi medida"**, dito com essas palavras.
 "Testado" só aparece depois do ensaio com servo ligado, no diário, com o número
 medido ao lado do previsto.
 
-## Duas dívidas em aberto, e elas importam
+## O hardware da bancada (decidido em 13/09/2026)
 
-1. **Nenhum servo foi ligado.** Todos os números deste repositório vêm de casos
-   sintéticos rodando numa placa nua. Não afirmar que a mão agarra.
+A prótese tem **duas placas**: a **mão** numa ESP32 DevKit V1 e o **EMG** num
+ESP32-C3 SuperMini, ligadas pela rede Wi-Fi da própria prótese (UDP), com tela de
+ajuste e OTA nas duas. Ver [`docs/06-rede-tela-e-ota.md`](docs/06-rede-tela-e-ota.md).
+
+A mão é a do **LAD**: quatro dedos longos com **motores DC** em dois L293D, dois
+servos no polegar, seis ACS712. Motor DC não tem posição, então ela é **estimada
+pelo tempo de acionamento** e se re-zera a cada abertura completa. A variante de
+sete servos no PCA9685 continua compilando (`LIMBIA_MAO_LAD=0`), mas não é a da
+bancada.
+
+## Dívidas em aberto, e elas importam
+
+1. **Nenhum motor foi ligado e nenhum eletrodo tocou pele.** Todos os números
+   vêm de casos sintéticos e de estado trafegando entre duas placas. Não afirmar
+   que a mão agarra, nem que o EMG move a mão.
 2. **Os limiares de corrente são chute educado.** `CORRENTE_CONTATO_MA`,
-   `CORRENTE_LIMITE_MA` e `CORRENTE_FOLGA_MA` dependem do servo, do atrito da
-   polia e de quanto o tendão já esticou. Enquanto não forem calibrados, a parada
-   por contato pode disparar cedo ou nunca.
+   `CORRENTE_LIMITE_MA` e `CORRENTE_FOLGA_MA` dependem do motor, do atrito e de
+   quanto o tendão já esticou. Com motor DC entram junto `VELOCIDADE_DEDO` e
+   `ARRANQUE_CEGO_MS`, que também são chute.
+3. **Os limiares de qualidade do eletrodo vieram de sinal sintético** — d' ≥ 2,5
+   e razão ≥ 3×. Só um antebraço de verdade diz se separam bem de mal posicionado.
+4. **A posição dos dedos longos é estimativa, não medida.** Dizer isso com essas
+   palavras em qualquer número que dependa dela, inclusive a forma do objeto.
 
 ## Convenção de commits
 

@@ -17,9 +17,9 @@
 #pragma once
 #include <Arduino.h>
 
+#include "atuador.h"
 #include "config.h"
 #include "corrente.h"
-#include "dedos.h"
 
 namespace Preensao {
 
@@ -49,6 +49,13 @@ inline uint8_t& confianca() {
   return c;
 }
 
+// Houve preensao desde o ultimo "abrir"? A tela so mostra o objeto quando
+// ha leitura de verdade - "nada na mao, 60%" com a mao aberta seria ruido.
+inline bool& temLeitura() {
+  static bool v = false;
+  return v;
+}
+
 inline bool ocupado() {
   return fase() == FECHANDO;
 }
@@ -59,25 +66,43 @@ inline bool pronta() {
 // ---------------------------------------------------------------------
 //  Inicia a preensao
 //
-//  O punho fica fora: ele nao agarra, e move-lo durante a leitura so
+//  Sem pose (comando 'p' do console): fecha tudo ate encostar. O punho
+//  fica fora - ele nao agarra, e move-lo durante a leitura so
 //  acrescentaria corrente que nao diz nada sobre o objeto.
+//
+//  Com pose (comando FECHAR vindo do EMG): vai para a pose "mao fechada"
+//  que o cliente gravou na tela de ajuste - e PARA NO CONTATO no caminho.
+//  E aqui que o EMG encontra o que o LimbIA tem de proprio: a pessoa
+//  contrai o flexor, a mao fecha em volta do copo e para quando encosta,
+//  em vez de esmagar o copo ate a pose gravada.
 // ---------------------------------------------------------------------
-inline void inicia() {
+inline void inicia(const limbia::Pose* alvo = nullptr) {
   limbia::AssinaturaPreensao& a = assinatura();
   for (uint8_t i = 0; i < limbia::N_JUNTAS; i++) {
     a.contatoEm[i] = 0;
     a.forcaMa[i]   = 0;
     a.tocou[i]     = false;
   }
-  a.comSensor = SENSORES_INSTALADOS;
+  // A mascara vem de quem SENTE agora, nao do #define de compilacao: com a
+  // corrente desligada na bancada, a mao nao mediu nada e nao pode opinar
+  // sobre tendao nenhum. Junta sem sensor nao vota - e "sem sensor"
+  // inclui "sensor que o firmware nao esta usando".
+  a.comSensor = 0;
+  for (uint8_t i = 0; i < limbia::N_JUNTAS; i++) {
+    if (Corr::temSensor(i)) a.comSensor |= LIMBIA_BIT(i);
+  }
 
   Corr::zeraPicos();
   Dedos::pararNoContato() = true;
 
-  // Fecha os cinco dedos; o polegar tambem cruza para a palma, que e o
-  // que fecha a pinca contra os longos.
-  for (uint8_t i = limbia::MINDY; i <= limbia::DEDAO; i++) Dedos::vaiPara(i, 1000);
-  Dedos::vaiPara(limbia::DEDAO_ABD, 0);
+  if (alvo) {
+    Dedos::vaiParaPose(*alvo);
+  } else {
+    // Fecha os cinco dedos; o polegar tambem cruza para a palma, que e o
+    // que fecha a pinca contra os longos.
+    for (uint8_t i = limbia::MINDY; i <= limbia::DEDAO; i++) Dedos::vaiPara(i, 1000);
+    Dedos::vaiPara(limbia::DEDAO_ABD, 0);
+  }
 
   objeto()    = limbia::OBJ_NENHUM;
   confianca() = 0;
@@ -104,11 +129,12 @@ inline void tick() {
     a.tocou[i]     = M.junta[i].contato;
   }
 
-  uint8_t c   = 0;
-  objeto()    = limbia::classificaPreensao(a, &c);
-  confianca() = c;
-  M.folgas    = limbia::juntasComFolga(a, CORRENTE_FOLGA_MA);
-  fase()      = PRONTA;
+  uint8_t c    = 0;
+  objeto()     = limbia::classificaPreensao(a, &c);
+  confianca()  = c;
+  M.folgas     = limbia::juntasComFolga(a, CORRENTE_FOLGA_MA);
+  fase()       = PRONTA;
+  temLeitura() = true;
 }
 
 // ---------------------------------------------------------------------

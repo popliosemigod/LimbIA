@@ -1,6 +1,6 @@
 // =====================================================================
 //  LimbIA - memoria.h
-//  Calibracao persistida na NVS.
+//  Calibracao e poses persistidas na NVS.
 //
 //  Por que isso importa mais aqui do que em outro projeto: o caderno do
 //  INOVAWEEK registra que ajustar os servos "gera um retrabalho
@@ -11,6 +11,8 @@
 #pragma once
 #include <Arduino.h>
 #include <Preferences.h>
+
+#include <limbia_enlace.h>
 
 #include "config.h"
 
@@ -29,6 +31,15 @@ inline bool& aberta() {
 // Struct efetivamente gravada. Mudou um campo? Suba CALIB_SCHEMA.
 struct Bloco {
   limbia::Calibracao calib[limbia::N_JUNTAS];
+};
+
+// As poses tem versao dentro do proprio bloco. Mudou o layout? Suba
+// POSES_VERSAO - o bloco velho e recusado e as poses voltam ao padrao.
+struct BlocoPoses {
+  uint8_t versao;
+  uint8_t reservado;
+  limbia::Pose aberta;
+  limbia::Pose fechada;
 };
 
 inline bool begin() {
@@ -62,7 +73,11 @@ inline bool carrega() {
   limbia::calibracaoPadrao(M.calib);
   M.calibrada = false;
 
-  if (!aberta()) return false;
+  // isKey antes de ler: sem isso, a primeira gravacao de uma placa nova
+  // enche o log de boot com erros do proprio core ("nvs_get_blob len
+  // fail") que nao sao erro nenhum - e log assustador sem motivo e log
+  // que todo mundo aprende a ignorar.
+  if (!aberta() || !prefs().isKey("calib")) return false;
   if (prefs().getBytesLength("calib") != sizeof(Bloco)) return false;
 
   Bloco b;
@@ -78,11 +93,98 @@ inline bool carrega() {
   return true;
 }
 
+// ---------------------------------------------------------------------
+//  Poses: "mao aberta" e "mao fechada"
+//
+//  Padrao: os gestos '2' (abrir) e '1' (fechar) do manual do LAD.
+// ---------------------------------------------------------------------
+inline void posesPadrao() {
+  M.poseAberta   = limbia::poseDoGesto(limbia::G_ABRIR);
+  M.poseFechada  = limbia::poseDoGesto(limbia::G_FECHAR);
+  M.posesDaFlash = false;
+}
+
+inline bool salvaPoses() {
+  if (!aberta()) return false;
+  BlocoPoses b;
+  b.versao      = POSES_VERSAO;
+  b.reservado   = 0;
+  b.aberta      = M.poseAberta;
+  b.fechada     = M.poseFechada;
+  const bool ok = prefs().putBytes("poses", &b, sizeof(b)) == sizeof(b);
+  if (ok) M.posesDaFlash = true;
+  return ok;
+}
+
+inline bool carregaPoses() {
+  posesPadrao();
+  if (!aberta() || !prefs().isKey("poses")) return false;
+  if (prefs().getBytesLength("poses") != sizeof(BlocoPoses)) return false;
+  BlocoPoses b;
+  if (prefs().getBytes("poses", &b, sizeof(b)) != sizeof(b)) return false;
+  if (b.versao != POSES_VERSAO) return false;
+  if (!limbia::poseValida(b.aberta.alvo) || !limbia::poseValida(b.fechada.alvo)) return false;
+  M.poseAberta   = b.aberta;
+  M.poseFechada  = b.fechada;
+  M.posesDaFlash = true;
+  return true;
+}
+
+// ---------------------------------------------------------------------
+//  Tempo de curso de cada dedo (mao do LAD)
+//
+//  E a calibracao desta mao: sem o tempo medido, a posicao estimada usa um
+//  chute e a assinatura do objeto sai deslocada. Equivale aos dois pulsos
+//  medidos com o servo tester na mao de servos.
+// ---------------------------------------------------------------------
+struct BlocoCurso {
+  uint8_t versao;
+  uint8_t reservado;
+  uint16_t tempoMs[limbia::N_JUNTAS];
+};
+
+inline void cursoPadrao() {
+  for (uint8_t i = 0; i < limbia::N_JUNTAS; i++) M.tempoCursoMs[i] = TEMPO_CURSO_PADRAO_MS;
+  M.cursoMedido = false;
+}
+
+inline bool salvaCurso() {
+  if (!aberta()) return false;
+  BlocoCurso b;
+  b.versao    = POSES_VERSAO;
+  b.reservado = 0;
+  for (uint8_t i = 0; i < limbia::N_JUNTAS; i++) b.tempoMs[i] = M.tempoCursoMs[i];
+  const bool ok = prefs().putBytes("curso", &b, sizeof(b)) == sizeof(b);
+  if (ok) M.cursoMedido = true;
+  return ok;
+}
+
+inline bool carregaCurso() {
+  cursoPadrao();
+  if (!aberta() || !prefs().isKey("curso")) return false;
+  if (prefs().getBytesLength("curso") != sizeof(BlocoCurso)) return false;
+  BlocoCurso b;
+  if (prefs().getBytes("curso", &b, sizeof(b)) != sizeof(b)) return false;
+  if (b.versao != POSES_VERSAO) return false;
+  for (uint8_t i = 0; i < limbia::N_DEDOS_LONGOS; i++) {
+    // Tempo absurdo e bloco corrompido: melhor o padrao, com aviso, do
+    // que uma posicao estimada com regua errada.
+    if (b.tempoMs[i] < TEMPO_CURSO_MIN_MS || b.tempoMs[i] > TEMPO_CURSO_MAX_MS) return false;
+  }
+  for (uint8_t i = 0; i < limbia::N_JUNTAS; i++) M.tempoCursoMs[i] = b.tempoMs[i];
+  M.cursoMedido = true;
+  return true;
+}
+
+// Calibracao, poses e tempos de curso de volta ao padrao. A rede NAO: ela
+// mora em outro namespace (NVS_REDE), justamente para sobreviver a isto.
 inline void apaga() {
   if (aberta()) prefs().clear();
   prefs().putUShort("__schema", CALIB_SCHEMA);
   limbia::calibracaoPadrao(M.calib);
   M.calibrada = false;
+  posesPadrao();
+  cursoPadrao();
 }
 
 }  // namespace Memoria
