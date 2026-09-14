@@ -1,174 +1,110 @@
 # LimbIA
 
-**Mão robótica e órtese.** Sete juntas, sensores de corrente nos dedos, e uma
-mão que sabe a forma do que está segurando.
+Prótese de mão movida por **EMG**, sobre o hardware do LAD Robotic Hand V3.0.
+Dois eletrodos no antebraço, duas placas ESP32, seis sensores de corrente.
 
-> **Estado: compila, e a lógica foi medida numa placa. Nenhum servo foi ligado
-> ainda.** Os limiares de corrente e os pulsos de cada junta são ponto de
-> partida, não medida — ver
-> [calibração](docs/03-anatomia-gestos-e-calibracao.md#o-console-de-calibração).
+> **Estado:** compila, e a lógica foi medida nas duas placas.
+> **Nenhum motor foi ligado e nenhum eletrodo tocou pele.**
 
-Este é um projeto do laboratório [**Jaspy**](https://github.com/popliosemigod/Jaspy).
-Cada projeto tem repositório próprio; este é o do LimbIA.
+## Objetivo
 
-## A ideia em uma frase
+Uma prótese que qualquer pessoa possa vestir: o usuário calibra os próprios
+eletrodos em um minuto, pela tela, e a mão passa a obedecer ao músculo dele.
 
-O **LAD Robotic Hand V3.0** mede força e não sabe onde o dedo está. O
-**INOVAWEEK** sabe onde o dedo está e não mede força. O LimbIA funde os dois — e
-com os dois sentidos juntos o dedo pode parar **quando encosta**, em vez de parar
-num ângulo combinado de antemão.
+1. **Calibrar por pessoa, não por prótese.** Antebraços são diferentes; a tela
+   guia o posicionamento dos eletrodos até a barra ficar verde.
+2. **Dois movimentos, bem feitos:** mão aberta e mão fechada — sem tremor, sem
+   resposta errática, com velocidade estável.
+3. **Fechar parando no contato**, em vez de esmagar o objeto até a pose gravada.
+4. **Manutenção sem cabo:** as duas placas se gravam pela rede da própria prótese.
 
-Isso responde à dor número um registrada no caderno do INOVAWEEK: *"é muito
-difícil deixar os servos ajustados para mover as cordas de cada dedo — isso gera
-um retrabalho desgramado"*. Um dedo que para por contato depende muito menos do
-ajuste fino do tendão. E um tendão que esticou passa a ter assinatura detectável.
+## Arquitetura
 
-A herança completa dos dois projetos está em
-[`docs/01-heranca-inovaweek-e-lad.md`](docs/01-heranca-inovaweek-e-lad.md).
+```
+   ESP32-C3 SuperMini                 ESP32 DevKit V1
+   placa do EMG                       placa da mão
+   2 eletrodos a 1 kHz                4 motores DC (2× L293D)
+   filtros, IA e decisor   ──UDP──►   2 servos no polegar
+   rede, tela e OTA        ◄──────    6 ACS712
+   192.168.4.1             telemetria 192.168.4.200
+```
 
-## O que ele faz
+O PC ou o celular entra na rede da prótese e a tela de ajuste abre sozinha.
 
-- move **sete juntas** — cinco dedos, o punho e a abdução do polegar — por um
-  PCA9685, com movimento gradual e sem `delay()`;
-- **para o dedo no contato**, lendo a corrente entre os passos do movimento;
-- classifica a **forma do objeto** pela posição em que cada dedo parou: fino,
-  cilíndrico, plano, grande, ou nada na mão;
-- **detecta tendão frouxo** — servo que percorre o curso inteiro sem a corrente
-  subir está enrolando folga, não puxando dedo;
-- guarda a calibração na flash, para o ajuste não se perder entre sessões;
-- console serial compatível com os comandos do manual do LAD (1 a 7).
+## Registros
 
-## Hardware
+Autoteste rodando **nas placas** — 89 verificações, 89 passaram nas duas
+(13/09/2026):
 
-| Item | Componente |
+| | DevKit V1 | ESP32-C3 |
+| --- | --- | --- |
+| Tempo do banco | 44,1 s | 209,5 s (banco reduzido) |
+| Cadeia de filtros do EMG | 0,90 µs/amostra | 22,65 µs/amostra |
+| Dois canais a 1 kHz | 0,2% de um núcleo | **4,5% de um núcleo** |
+| Classificação LDA | 2,99 µs | 30,33 µs |
+| Flash | 64,8% | 66,1% |
+
+Com as duas placas ligadas:
+
+| | |
 | --- | --- |
-| Controle | ESP32 DevKit V1 |
-| Driver de servo | PCA9685, 16 canais, I²C |
-| Juntas | 7 servos (MG90S hoje; 13 kgf para a versão de força) |
-| Força | 4 × ACS712 20 A, um por dedo longo |
-| Estrutura | PLA impresso + silicone, tendões em linha de pesca, polias |
-| EMG | previsto, canal reservado — sem sensor ainda |
+| Janelas de EMG no C3, com rede e tela no ar | **1045, perdidas 0** |
+| Enlace entre as placas | conecta nos dois sentidos |
+| Comando EMG → rede → mão → preensão | funcionando |
+| Pacotes com 1 bit trocado aceitos | 0 de 120 |
+| Calibração de eletrodo (sinal sintético) | verde em 3 ciclos (~37 s) |
+| Eletrodo no tendão, trocado, saturando, mau contato | recusados, com diagnóstico |
+| Modelo recusado pela tela, usado à força | 0 de 30 intenções, nenhuma ação errada |
 
-Pinagem, alimentação e a contagem de canais de ADC que definiu a placa estão em
-[`docs/02-hardware-e-pinagem.md`](docs/02-hardware-e-pinagem.md).
+Cada iteração, com previsto ao lado de medido, está no [diário](diario.md).
 
-## Compilar e gravar
+## Gravar
 
 ```powershell
-pio run                                  # todos os ambientes
-pio run -e esp32dev -t upload            # grava a mão
-pio device monitor -b 115200             # console
+pio run                          # mão, EMG e autoteste
 
-pio run -e bancada -t upload             # log detalhado, para calibrar
-pio run -e autoteste_c3 -t upload        # exercita a lógica sem hardware
+pio run -e esp32dev -t upload    # a mão      (sempre com -e)
+pio run -e emg      -t upload    # o EMG
+pio device monitor -b 115200     # console
+
+pio run -e mao_ota -t upload     # pela rede, sem USB
+pio run -e emg_ota -t upload
 ```
 
-| Ambiente | Placa | Para que serve |
+| Ambiente | Placa | |
 | --- | --- | --- |
-| `esp32dev` | DevKit V1 | a mão |
-| `bancada` | DevKit V1 | a mesma, com log detalhado |
-| `autoteste` | DevKit V1 | exercita `limbia_mao` sem nada ligado |
-| `autoteste_c3` | ESP32-C3 | o mesmo teste na placa que está na bancada hoje |
-
-## Consumo de recursos
-
-Compilação de 09/09/2026:
-
-| Ambiente | RAM | Flash |
-| --- | --- | --- |
-| `esp32dev` | 6,8% (22,4 kB) | 26,0% (341 kB de 1,31 MB) |
-| `bancada` | 6,8% (22,4 kB) | 26,4% (346 kB) |
-| `autoteste_c3` | 4,2% (13,9 kB) | 19,1% (251 kB) |
-
-Sobra folga larga — não há Wi-Fi nem servidor web nesta versão.
-
-## O que já foi medido
-
-O autoteste roda na placa e imprime números. Resultado de 09/09/2026, num
-ESP32-C3:
-
-| Medida | Valor |
-| --- | --- |
-| Verificações | **35/35 passaram**, em 8 ms |
-| Classificador, casos bem separados | 240/240 = 100%, confiança 94% |
-| Classificador, **casos de fronteira** | 34/40 = 85%, confiança **86%** |
-| Erro de ida e volta posição↔pulso | 1 por mil |
-| Custo de uma classificação | 1,7 µs |
-| Confiança com 4 dedos / com 2 | 100% / 45% |
-
-Os 100% não são o resultado — um banco que eu mesmo gerei mede o gerador tanto
-quanto o classificador. **O resultado é a linha de fronteira**: acerto e confiança
-caem juntos e quase na mesma medida, o que significa que o número de confiança
-está calibrado e pode ser usado para decidir. Leitura completa em
-[`docs/04-propriocepcao.md`](docs/04-propriocepcao.md).
-
-## Estrutura
-
-```
-LimbIA/
-├── platformio.ini      quatro ambientes, bibliotecas fixadas
-├── include/
-│   ├── config.h        pinagem, limiares, estado  ← só isso muda ao trocar de placa
-│   ├── dedos.h         PCA9685, movimento gradual, parada por contato
-│   ├── corrente.h      ACS712, zero medido no boot
-│   ├── preensao.h      fecha até encostar e lê a forma
-│   ├── memoria.h       calibração persistida na NVS
-│   └── secrets.example.h
-├── lib/limbia_mao/     lógica sem Arduino: pulso, gestos, classificação
-├── src/
-│   ├── main.cpp        console serial e loop
-│   └── main_autoteste.cpp
-├── docs/
-└── diario.md           previsto × medido, a cada iteração
-```
+| `esp32dev` | DevKit V1 | a mão (motores DC do LAD) |
+| `emg` | ESP32-C3 | EMG, IA, rede e tela |
+| `mao_servo` | DevKit V1 | a mão na variante de servos + PCA9685 |
+| `bancada` | DevKit V1 | a mão com log detalhado |
+| `autoteste` / `autoteste_c3` | as duas | a lógica sem hardware |
+| `mao_ota` / `emg_ota` | as duas | gravação pela rede |
 
 ## Documentação
 
-- [Herança do INOVAWEEK e do LAD](docs/01-heranca-inovaweek-e-lad.md) — o que
-  cada projeto contribuiu, o que a fusão descartou e por quê
-- [Hardware e pinagem](docs/02-hardware-e-pinagem.md) — ligação, alimentação, a
-  contagem de ADC que escolheu a placa, o pino OE
-- [Anatomia, gestos e calibração](docs/03-anatomia-gestos-e-calibracao.md) — as
-  sete juntas, as tabelas de pulso, o console de ajuste
-- [Propriocepção](docs/04-propriocepcao.md) — como a mão descobre a forma do
-  objeto, e como ler os números do autoteste
-- [Diário](diario.md) — cada iteração com previsto ao lado de medido
+| | |
+| --- | --- |
+| [01](docs/01-heranca-inovaweek-e-lad.md) | de onde o projeto veio: INOVAWEEK e LAD |
+| [02](docs/02-hardware-e-pinagem.md) | hardware e pinagem |
+| [03](docs/03-anatomia-gestos-e-calibracao.md) | juntas, gestos e calibração |
+| [04](docs/04-propriocepcao.md) | como a mão descobre a forma do objeto |
+| [05](docs/05-emg-e-a-ia.md) | o EMG, a calibração por pessoa e a IA |
+| [06](docs/06-rede-tela-e-ota.md) | a rede, a tela e o OTA |
 
-## Próximos passos
+## Em aberto
 
-1. **Montar uma junta e calibrá-la.** Um dedo, um servo, um ACS712. É o ensaio
-   que transforma todos os limiares de chute educado em número medido, e destrava
-   tudo o mais.
-2. **Comprar dois ACS712** para o polegar e a abdução. Sem sensor no polegar a
-   mão não distingue "vazia" de "segurando algo fino contra a palma" — e o
-   autoteste mostra a confiança caindo de 100% para 45% com metade dos dedos
-   cegos.
-3. **Trocar os MG90S pelos servos de 13 kgf.** Os MG90S servem para validar a
-   lógica; não vão fechar a mão contra um objeto.
-4. **Primeiro ensaio de preensão real** com um copo, uma caneta e um cartão —
-   medir o acerto de campo, que hoje não existe.
-5. **Reconhecimento de objeto por imagem**, o objetivo original do INOVAWEEK.
-6. **A órtese**, que dá metade do nome ao projeto e não tem concepção escrita.
-
-## Convenções
-
-Commits seguem `tipo(subsistema): descrição`, validados pelo `commitizen`
-([`cz.toml`](cz.toml)). Parâmetro medido na bancada usa o tipo `calib` e cita o
-número no corpo. Branches: `main` guarda o estado coerente e publicado, `develop`
-integra, `feat/<assunto>` para tarefa curta.
-
-**Tag de versão só nasce de coisa medida.** A v0.1 está na `main` porque compila
-e teve a lógica verificada numa placa, mas não recebeu tag — tag em firmware que
-nunca moveu um servo transforma a linha do tempo em ficção.
-
-```powershell
-python -m pip install --user pre-commit commitizen
-pre-commit install --install-hooks
-pre-commit install --hook-type commit-msg
-```
+1. Ligar um motor e medir: velocidade, limiares de corrente e arranque são chute
+   educado.
+2. Medir o tempo de curso de cada dedo — é a calibração desta mão.
+3. Primeiro eletrodo na pele, com a placa do EMG na bateria.
+4. Abrir a tela num navegador.
+5. Primeiro ensaio de preensão com objeto real.
+6. A órtese, que dá metade do nome ao projeto.
 
 ## Crédito
 
-O **LAD Robotic Hand V3.0 — ESP32 Control v1.1** é projeto de **Adrian Duran**
-(LAD Robotics). O método de calibração por endpoints medidos, o polegar com dois
-graus de liberdade e a corrente em série com cada motor vieram do manual dele.
+**LAD Robotic Hand V3.0 — ESP32 Control v1.1**, de **Adrian Duran** (LAD
+Robotics): a mão, os motores, os sensores de corrente em série, a calibração por
+endpoints medidos e o polegar com dois graus de liberdade.
+
+Projeto do laboratório [Jaspy](https://github.com/popliosemigod/Jaspy).

@@ -1,5 +1,88 @@
 # Hardware e pinagem
 
+> **Duas placas, e duas variantes de mão.** A prótese tem hoje a **placa da mão**
+> (ESP32 DevKit V1) e a **placa do EMG** (ESP32-C3 SuperMini) — ver
+> [06-rede-tela-e-ota.md](06-rede-tela-e-ota.md). E o firmware da mão compila
+> para dois hardwares diferentes:
+>
+> | | `LIMBIA_MAO_LAD=1` (padrão, na bancada) | `LIMBIA_MAO_LAD=0` |
+> | --- | --- | --- |
+> | Dedos longos | 4 motores DC em dois L293D | 4 servos |
+> | Polegar | 2 servos (flexão e abdução) | 2 servos |
+> | Punho | não tem | 1 servo |
+> | Corrente | **6 ACS712** | 4 ACS712 |
+> | Posição do dedo | **estimada pelo tempo** | pulso do servo |
+>
+> O que muda é só o backend de acionamento (`include/motores.h` ou
+> `include/dedos.h`, os dois no mesmo `namespace Dedos`). Estado, console,
+> preensão, enlace, rede e OTA são os mesmos.
+
+## A mão do LAD: pinagem
+
+Esta é a mão da bancada, com o hardware do **LAD Robotic Hand V3.0**.
+
+| Função | GPIO | Observação |
+| --- | --- | --- |
+| MINDY — IN3/IN4 do 2º L293D | 23, 27 | PWM por LEDC |
+| DONCARE — IN1/IN2 do 2º L293D | 21, 22 | |
+| FEIO — IN3/IN4 do 1º L293D | 5, 15 | |
+| JULGADOR — IN1/IN2 do 1º L293D | 18, 19 | |
+| Servo do polegar (flexão) | 25 | LEDC 50 Hz, 16 bits |
+| Servo do polegar (abdução) | 26 | |
+| Corrente MINDY / DONCARE / FEIO / JULGADOR | 36, 39, 34, 35 | ADC1 |
+| Corrente DEDÃO / DEDAO_ABD | 32, 33 | ADC1 |
+| Botão BOOT (10 s = rede de fábrica) | 0 | |
+| LED da placa | 2 | |
+
+### A correção que o manual do LAD exige aqui
+
+O esquema do manual põe os **sensores 5 e 6 nos GPIO 25 e 26 — que são ADC2**.
+O projeto dele não usa Wi-Fi, e por isso funciona. Aqui o rádio fica ligado o
+tempo todo (enlace entre as placas e OTA), e **leitura analógica no ADC2 com
+Wi-Fi ligado devolve lixo**.
+
+Os seis sensores foram remapeados para os **seis canais de ADC1** da DevKit — que
+são exatamente seis, o número de sensores do LAD — e o 25/26, agora livres,
+viraram as saídas dos dois servos do polegar. Nada se perdeu na troca.
+
+### PWM nas entradas do L293D, e não `digitalWrite`
+
+Motor DC ligado direto fecha o dedo rápido demais para a corrente ser lida no
+meio do caminho — e ler no meio do caminho é o que faz o dedo **parar quando
+encosta**, em vez de parar depois de ter empurrado. Como o EN dos módulos L293D
+vem amarrado em nível alto, a velocidade é controlada pelas **entradas**: PWM
+numa, zero na outra. O duty está em `VELOCIDADE_DEDO` (200 de 255) e é **chute
+educado** — é o primeiro número que o ensaio corrige.
+
+### Pull-down de 10 kΩ nas oito entradas do L293D
+
+Enquanto o firmware não sobe, os GPIO ficam em alta impedância e as entradas do
+driver flutuam. O pull-down é o equivalente ao pull-up do OE na mão de servos:
+resolve **em hardware** o instante que o firmware não alcança.
+
+### Posição estimada por tempo
+
+Motor DC não tem posição, e é a posição de contato que forma a assinatura do
+objeto ([04-propriocepcao.md](04-propriocepcao.md)). Mede-se uma vez o tempo de
+ponta a ponta de cada dedo (comando `m` do console, gravado na flash), e a
+posição passa a ser a integral do tempo de acionamento.
+
+Estimativa por tempo escorrega — tensão da bateria cai, atrito muda, tendão
+estica. Por isso ela se corrige sozinha: **toda abertura completa termina no fim
+de curso, e ali a posição volta a ser zero por medida, não por conta.** Quem usa
+a prótese abre a mão o tempo todo; o erro não acumula. **Isso não é encoder**, e
+o número que sai dali é estimativa.
+
+### O arranque cego
+
+Motor DC parado puxa várias vezes a corrente de regime no instante em que parte.
+Os primeiros `ARRANQUE_CEGO_MS` (250 ms) não contam como contato — sem isso, todo
+dedo "encosta em alguma coisa" no primeiro instante de movimento.
+
+---
+
+## A mão de servos (variante `LIMBIA_MAO_LAD=0`)
+
 Placa de controle: **ESP32 DevKit V1** (ESP32-D0WD-V3, 30 pinos, 4 MB de flash).
 Driver de servo: **PCA9685**, 16 canais, I²C.
 

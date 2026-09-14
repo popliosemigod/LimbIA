@@ -5,19 +5,20 @@
 //
 //  include/secrets.h esta no .gitignore e NUNCA vai para o repositorio.
 //
-//  O firmware da v0.1 nao usa rede: o console e a serial, e a mao nao
-//  depende de Wi-Fi para funcionar. Este arquivo ja existe porque o
-//  painel web esta previsto - e porque a regra do laboratorio e que
-//  credencial nasce fora do git, nao que ela seja movida para fora
-//  depois que alguem percebe.
+//  Sem secrets.h o firmware compila mesmo assim, com ESTES valores - e
+//  avisa no boot. E o que deixa o CI compilar sem credencial nenhuma. Mas
+//  gravar numa protese de verdade um firmware com a senha de OTA publica
+//  deste arquivo e deixar qualquer um na rede dela regravar a mao.
 // =====================================================================
 #pragma once
 
-// Lembrete de hardware: o radio do ESP32 classico e 2,4 GHz APENAS.
-// Apontar para um SSID de 5 GHz devolve "rede nao encontrada", nao erro
-// de senha - e o diagnostico se perde procurando no lugar errado.
-#define LIMBIA_WIFI_SSID "REDE_2G_AQUI"
-#define LIMBIA_WIFI_PASS "SENHA_AQUI"
-
-// Senha do AP que a mao levanta quando nao ha credencial.
+// Senha de FABRICA da rede da protese. O cliente troca na tela de ajuste
+// na primeira vez; esta so vale ate la, e de novo depois de segurar o
+// BOOT por 10 s. O WPA2 exige de 8 a 63 caracteres.
 #define LIMBIA_AP_PASS "limbia123"
+
+// Senha do OTA das duas placas. E do laboratorio, nao do cliente: e ela
+// que impede alguem na rede da protese de gravar firmware na mao. O
+// `pio run -e mao_ota -t upload` le a mesma constante deste arquivo (ou
+// do secrets.h), entao ha uma fonte so.
+#define LIMBIA_OTA_PASS "SENHA_OTA_AQUI"
