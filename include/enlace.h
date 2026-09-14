@@ -42,13 +42,17 @@ inline uint16_t envia(const IPAddress& ip, uint16_t porta, uint8_t tipo, const v
                       uint16_t n) {
   if (!aberto()) return 0;
   uint8_t buf[limbia::ENLACE_MAX_PACOTE];
-  const uint16_t s     = ++seq();
+  // Zero e "nao foi enviado"; o contador pula o zero ao dar a volta.
+  if (++seq() == 0) seq() = 1;
+  const uint16_t s     = seq();
   const uint16_t total = limbia::montaPacote(tipo, s, carga, n, buf, sizeof(buf));
   if (total == 0) return 0;
   if (!udp().beginPacket(ip, porta)) return 0;
   udp().write(buf, total);
-  udp().endPacket();
-  return s;
+  // endPacket devolve 0 quando o lwIP nao tem rota para o destino - o que
+  // acontece o tempo todo enquanto a outra placa ainda nao entrou na rede.
+  // Quem chama precisa saber, para espacar as tentativas.
+  return udp().endPacket() ? s : 0;
 }
 
 // Um pacote valido, se houver. Nao bloqueia. `buf` precisa ter

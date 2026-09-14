@@ -27,9 +27,9 @@
 
 #include <Arduino.h>
 
+#include "atuador.h"
 #include "config.h"
 #include "corrente.h"
-#include "dedos.h"
 #include "memoria.h"
 #include "preensao.h"
 #include "rede.h"
@@ -99,9 +99,15 @@ static void ajuda() {
   Serial.println(F("   c <j> +<n>   move a junta j em +n us (achar o fim de curso)"));
   Serial.println(F("   c <j> -<n>   move a junta j em -n us"));
   Serial.println(F("   w  gravar na flash          f  voltar ao padrao de fabrica"));
+#if LIMBIA_MAO_LAD
+  Serial.println(F("  CURSO DOS DEDOS (motor DC nao tem posicao: ela vem do tempo)"));
+  Serial.println(F("   m            lista o tempo de curso de cada dedo"));
+  Serial.println(F("   m <j>        mede o curso do dedo j (0..3): abre, fecha e cronometra"));
+#endif
   Serial.println(F("  DIVERSOS"));
   Serial.println(F("   s  status      x  desligar as saidas (emergencia)"));
   Serial.println(F("   e  ligar as saidas          n  rede e enlace com o EMG"));
+  Serial.println(F("   i  usar a corrente: liga/desliga (BANCADA, sem sensor ligado)"));
   Serial.println(F("   ?  esta ajuda"));
   Serial.println(F("=================================================="));
 }
@@ -122,8 +128,9 @@ static void status() {
     }
     Serial.printf("   %s%s\n", j.emMovimento ? "movendo" : "parada", j.contato ? " (contato)" : "");
   }
-  Serial.printf("  gestos executados: %lu | juntas com folga: %u\n", (unsigned long)M.movimentos,
-                M.folgas);
+  Serial.printf("  gestos executados: %lu | juntas com folga: %u | corrente: %s\n",
+                (unsigned long)M.movimentos, M.folgas,
+                M.usaCorrente ? "em uso" : "IGNORADA (bancada)");
 }
 
 static void statusRede() {
@@ -215,6 +222,60 @@ static void comandoCalibracao(const char* linha) {
   }
 }
 
+#if LIMBIA_MAO_LAD
+// ---------------------------------------------------------------------
+//  m | m <j> - o tempo de curso, que e a calibracao desta mao
+//
+//  O dedo abre ate travar, depois fecha ate travar, e o cronometro entre
+//  as duas travadas e o curso. Dali em diante, tempo de acionamento vira
+//  posicao estimada - e e a posicao que forma a assinatura do objeto.
+// ---------------------------------------------------------------------
+static void listaCurso() {
+  Serial.println();
+  Serial.println(F("  #  dedo        tempo de curso   posicao estimada agora"));
+  for (uint8_t i = 0; i < limbia::N_DEDOS_LONGOS; i++) {
+    Serial.printf("  %u  %-10s  %5u ms         %4u\n", i, limbia::nomeDaJunta(i), M.tempoCursoMs[i],
+                  M.junta[i].posicao);
+  }
+  Serial.printf("  %s\n", M.cursoMedido ? "medido na bancada e gravado na flash"
+                                        : "PADRAO DE FABRICA - medir com 'm <j>'");
+}
+
+static void comandoCurso(const char* linha) {
+  int junta = -1;
+  if (sscanf(linha, "m %d", &junta) != 1) {
+    listaCurso();
+    return;
+  }
+  if (junta < 0 || junta >= (int)limbia::N_DEDOS_LONGOS) {
+    Serial.println(F("  dedo invalido (0..3, so os dedos longos tem motor DC)"));
+    return;
+  }
+  if (!Dedos::Curso::inicia((uint8_t)junta)) {
+    Serial.println(F("  ja ha uma medicao em curso"));
+    return;
+  }
+  Serial.printf("  medindo o curso de %s: abrindo ate travar, depois fechando...\n",
+                limbia::nomeDaJunta((uint8_t)junta));
+}
+
+static void tickCurso() {
+  const uint8_t antes = Dedos::Curso::S().fase;
+  Dedos::Curso::tick();
+  const Dedos::Curso::Estado& s = Dedos::Curso::S();
+  if (s.fase == antes) return;
+
+  if (s.fase == Dedos::Curso::FEITO) {
+    Serial.printf("  curso de %s: %u ms  (antes: %u ms)\n", limbia::nomeDaJunta(s.junta),
+                  s.medidoMs, TEMPO_CURSO_PADRAO_MS);
+    Serial.println(Memoria::salvaCurso() ? F("  gravado na flash") : F("  FALHA ao gravar"));
+  } else if (s.fase == Dedos::Curso::FALHOU) {
+    Serial.println(F("  medicao invalida: o dedo travou cedo demais ou nunca travou."));
+    Serial.println(F("  Conferir tendao, alimentacao do motor e o limiar de corrente."));
+  }
+}
+#endif  // LIMBIA_MAO_LAD
+
 static void executaGesto(uint8_t gesto) {
   Dedos::pararNoContato() = false;  // gesto vai ate a pose, nao para no caminho
   Dedos::vaiParaPose(limbia::poseDoGesto(gesto));
@@ -277,6 +338,22 @@ static void processaLinha(char* linha) {
     case 'n':
     case 'N': statusRede(); break;
 
+    case 'i':
+    case 'I':
+      M.usaCorrente = !M.usaCorrente;
+      if (M.usaCorrente) {
+        Serial.println(F("  corrente EM USO: parada por contato e protecao ligadas"));
+      } else {
+        Serial.println(F("  CORRENTE IGNORADA - so para bancada sem ACS712 ligado."));
+        Serial.println(F("  Sem contato e sem protecao de sobrecarga; so a guarda de tempo."));
+      }
+      break;
+
+#if LIMBIA_MAO_LAD
+    case 'm':
+    case 'M': comandoCurso(linha); break;
+#endif
+
     case 's':
     case 'S': status(); break;
 
@@ -337,6 +414,7 @@ void setup() {
   delay(300);  // unica espera do firmware: janela para o monitor engatar
 
   memset(&M, 0, sizeof(M));
+  M.usaCorrente = true;  // so a bancada desliga, e so pelo console
 
   Serial.println();
   Serial.println(F("====================================================="));
@@ -349,17 +427,26 @@ void setup() {
   Serial.printf("[calib] %s\n",
                 daFlash ? "carregada da flash" : "PADRAO DE FABRICA - calibre antes de montar");
   Serial.printf("[poses] %s\n", Memoria::carregaPoses() ? "carregadas da flash" : "padrao");
+#if LIMBIA_MAO_LAD
+  Serial.printf("[curso] %s\n", Memoria::carregaCurso()
+                                    ? "tempos medidos, carregados da flash"
+                                    : "PADRAO DE FABRICA - a posicao estimada e chute ate medir");
+#endif
 
   Corr::begin();
 
-  // Os servos vem ANTES do Wi-Fi: o zero dos ACS712 e medido com tudo
+  // O acionamento vem ANTES do Wi-Fi: o zero dos ACS712 e medido com tudo
   // parado e em silencio, e o Dedos::begin garante as saidas mortas ate
-  // haver posicao valida em todos os canais.
-  if (Dedos::begin()) {
-    Serial.println(F("[pca9685] respondeu no I2C"));
-  } else {
-    Serial.println(F("[pca9685] NAO respondeu - conferir SDA/SCL e alimentacao"));
-  }
+  // haver valor valido em todos os canais.
+  const bool ok = Dedos::begin();
+#if LIMBIA_MAO_LAD
+  Serial.println(F("[mao] LAD: 4 dedos com motor DC (L293D) + 2 servos no polegar"));
+  Serial.println(F("[mao] a posicao dos dedos longos e ESTIMADA pelo tempo de acionamento"));
+  (void)ok;
+#else
+  Serial.println(ok ? F("[pca9685] respondeu no I2C")
+                    : F("[pca9685] NAO respondeu - conferir SDA/SCL e alimentacao"));
+#endif
 
   Serial.print(F("[corrente] sensores em:"));
   for (uint8_t i = 0; i < limbia::N_JUNTAS; i++) {
@@ -384,6 +471,9 @@ void setup() {
 void loop() {
   Corr::tick();
   Dedos::tick();
+#if LIMBIA_MAO_LAD
+  tickCurso();
+#endif
   tickSequencia();
   Preensao::tick();
   console();

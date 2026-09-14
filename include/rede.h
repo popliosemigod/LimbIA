@@ -50,12 +50,19 @@ inline bool carrega() {
   padraoDeFabrica(&c);
 
   Preferences p;
-  if (!p.begin(NVS_REDE, true)) return false;  // namespace ainda nao existe
+  // Aberto para escrita de proposito: assim o namespace nasce na primeira
+  // vez e o boot de uma placa nova nao imprime erro do core sobre algo
+  // que ainda nao existe.
+  if (!p.begin(NVS_REDE, false)) return false;
   char ssid[33]  = {0};
   char senha[64] = {0};
-  p.getString("ssid", ssid, sizeof(ssid));
-  p.getString("senha", senha, sizeof(senha));
+  const bool tem = p.isKey("ssid") && p.isKey("senha");
+  if (tem) {
+    p.getString("ssid", ssid, sizeof(ssid));
+    p.getString("senha", senha, sizeof(senha));
+  }
   p.end();
+  if (!tem) return false;
 
   // Confere antes de usar: credencial que o WPA2 recusaria faria a placa
   // subir sem rede nenhuma - e sem rede ninguem alcanca a tela para

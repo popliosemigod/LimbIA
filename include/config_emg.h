@@ -17,12 +17,27 @@
 //
 //  O Wi-Fi fica ligado o tempo todo nesta placa (ela e o ponto de acesso),
 //  entao o ADC2 esta fora de questao. Os dois eletrodos vao em pinos de
-//  ADC1 que sao so entrada.
+//  ADC1.
+//
+//  A placa da bancada e o ESP32-C3 SuperMini. Ele tem cinco canais de
+//  ADC1 (GPIO 0 a 4) - dois eletrodos cabem com sobra, e e por isso que
+//  ele serve aqui e nao serviria na mao, que precisa de seis. O C3 tambem
+//  nao tem ADC2 no caminho do radio, mas a regra continua valendo: toda
+//  leitura no ADC1.
 // ---------------------------------------------------------------------
-#define PIN_EMG_FLEXOR   34  // ADC1_CH6 - eletrodo 1, face da palma
-#define PIN_EMG_EXTENSOR 35  // ADC1_CH7 - eletrodo 2, face do dorso
-#define PIN_LED_PLACA    2   // pisca em ajuste, aceso em padrao
-#define PIN_BOTAO        0   // BOOT: segurar 10 s volta a rede ao de fabrica
+#if CONFIG_IDF_TARGET_ESP32C3
+#define PIN_EMG_FLEXOR   0  // ADC1_CH0 - eletrodo 1, face da palma
+#define PIN_EMG_EXTENSOR 1  // ADC1_CH1 - eletrodo 2, face do dorso
+#define PIN_LED_PLACA    8  // LED da placa - aceso em nivel BAIXO no SuperMini
+#define PIN_BOTAO        9  // BOOT: segurar 10 s volta a rede ao de fabrica
+#define LED_ATIVO_BAIXO  1
+#else
+#define PIN_EMG_FLEXOR   34  // ADC1_CH6
+#define PIN_EMG_EXTENSOR 35  // ADC1_CH7
+#define PIN_LED_PLACA    2
+#define PIN_BOTAO        0
+#define LED_ATIVO_BAIXO  0
+#endif
 
 // ---------------------------------------------------------------------
 //  O SENSOR

@@ -73,7 +73,11 @@ inline bool carrega() {
   limbia::calibracaoPadrao(M.calib);
   M.calibrada = false;
 
-  if (!aberta()) return false;
+  // isKey antes de ler: sem isso, a primeira gravacao de uma placa nova
+  // enche o log de boot com erros do proprio core ("nvs_get_blob len
+  // fail") que nao sao erro nenhum - e log assustador sem motivo e log
+  // que todo mundo aprende a ignorar.
+  if (!aberta() || !prefs().isKey("calib")) return false;
   if (prefs().getBytesLength("calib") != sizeof(Bloco)) return false;
 
   Bloco b;
@@ -114,7 +118,7 @@ inline bool salvaPoses() {
 
 inline bool carregaPoses() {
   posesPadrao();
-  if (!aberta()) return false;
+  if (!aberta() || !prefs().isKey("poses")) return false;
   if (prefs().getBytesLength("poses") != sizeof(BlocoPoses)) return false;
   BlocoPoses b;
   if (prefs().getBytes("poses", &b, sizeof(b)) != sizeof(b)) return false;
@@ -126,14 +130,61 @@ inline bool carregaPoses() {
   return true;
 }
 
-// Calibracao E poses de volta ao padrao. A rede NAO: ela mora em outro
-// namespace (NVS_REDE), justamente para sobreviver a este comando.
+// ---------------------------------------------------------------------
+//  Tempo de curso de cada dedo (mao do LAD)
+//
+//  E a calibracao desta mao: sem o tempo medido, a posicao estimada usa um
+//  chute e a assinatura do objeto sai deslocada. Equivale aos dois pulsos
+//  medidos com o servo tester na mao de servos.
+// ---------------------------------------------------------------------
+struct BlocoCurso {
+  uint8_t versao;
+  uint8_t reservado;
+  uint16_t tempoMs[limbia::N_JUNTAS];
+};
+
+inline void cursoPadrao() {
+  for (uint8_t i = 0; i < limbia::N_JUNTAS; i++) M.tempoCursoMs[i] = TEMPO_CURSO_PADRAO_MS;
+  M.cursoMedido = false;
+}
+
+inline bool salvaCurso() {
+  if (!aberta()) return false;
+  BlocoCurso b;
+  b.versao    = POSES_VERSAO;
+  b.reservado = 0;
+  for (uint8_t i = 0; i < limbia::N_JUNTAS; i++) b.tempoMs[i] = M.tempoCursoMs[i];
+  const bool ok = prefs().putBytes("curso", &b, sizeof(b)) == sizeof(b);
+  if (ok) M.cursoMedido = true;
+  return ok;
+}
+
+inline bool carregaCurso() {
+  cursoPadrao();
+  if (!aberta() || !prefs().isKey("curso")) return false;
+  if (prefs().getBytesLength("curso") != sizeof(BlocoCurso)) return false;
+  BlocoCurso b;
+  if (prefs().getBytes("curso", &b, sizeof(b)) != sizeof(b)) return false;
+  if (b.versao != POSES_VERSAO) return false;
+  for (uint8_t i = 0; i < limbia::N_DEDOS_LONGOS; i++) {
+    // Tempo absurdo e bloco corrompido: melhor o padrao, com aviso, do
+    // que uma posicao estimada com regua errada.
+    if (b.tempoMs[i] < TEMPO_CURSO_MIN_MS || b.tempoMs[i] > TEMPO_CURSO_MAX_MS) return false;
+  }
+  for (uint8_t i = 0; i < limbia::N_JUNTAS; i++) M.tempoCursoMs[i] = b.tempoMs[i];
+  M.cursoMedido = true;
+  return true;
+}
+
+// Calibracao, poses e tempos de curso de volta ao padrao. A rede NAO: ela
+// mora em outro namespace (NVS_REDE), justamente para sobreviver a isto.
 inline void apaga() {
   if (aberta()) prefs().clear();
   prefs().putUShort("__schema", CALIB_SCHEMA);
   limbia::calibracaoPadrao(M.calib);
   M.calibrada = false;
   posesPadrao();
+  cursoPadrao();
 }
 
 }  // namespace Memoria

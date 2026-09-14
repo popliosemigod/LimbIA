@@ -17,9 +17,9 @@
 #pragma once
 #include <Arduino.h>
 
+#include "atuador.h"
 #include "config.h"
 #include "corrente.h"
-#include "dedos.h"
 
 namespace Preensao {
 
@@ -83,7 +83,14 @@ inline void inicia(const limbia::Pose* alvo = nullptr) {
     a.forcaMa[i]   = 0;
     a.tocou[i]     = false;
   }
-  a.comSensor = SENSORES_INSTALADOS;
+  // A mascara vem de quem SENTE agora, nao do #define de compilacao: com a
+  // corrente desligada na bancada, a mao nao mediu nada e nao pode opinar
+  // sobre tendao nenhum. Junta sem sensor nao vota - e "sem sensor"
+  // inclui "sensor que o firmware nao esta usando".
+  a.comSensor = 0;
+  for (uint8_t i = 0; i < limbia::N_JUNTAS; i++) {
+    if (Corr::temSensor(i)) a.comSensor |= LIMBIA_BIT(i);
+  }
 
   Corr::zeraPicos();
   Dedos::pararNoContato() = true;

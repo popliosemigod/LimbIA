@@ -24,8 +24,8 @@
 
 #include <limbia_enlace.h>
 
+#include "atuador.h"
 #include "config.h"
-#include "dedos.h"
 #include "enlace.h"
 #include "memoria.h"
 #include "preensao.h"
@@ -160,7 +160,9 @@ inline void enviaTelemetria() {
   static uint32_t proximo = 0;
   const uint32_t agora    = millis();
   if ((int32_t)(agora - proximo) < 0) return;
-  proximo = agora + ENLACE_TELEMETRIA_MS;
+  // Sem enlace ativo nao ha quem escute: manda de dois em dois segundos,
+  // so para se anunciar quando a placa do EMG voltar.
+  proximo = agora + (S().ativo ? ENLACE_TELEMETRIA_MS : 2000);
   if (WiFi.status() != WL_CONNECTED) return;
 
   limbia::PacoteTelemetria t;
@@ -184,7 +186,13 @@ inline void enviaTelemetria() {
   t.seqAcaoAtendida = S().seqAcao;
   strncpy(t.versao, LIMBIA_VERSAO, sizeof(t.versao) - 1);
 
-  Enlace::envia(IPAddress(REDE_IP_EMG), ENLACE_PORTA_EMG, limbia::PKT_TELEMETRIA, &t, sizeof(t));
+  // Enquanto a placa do EMG estiver fora do ar, o lwIP nao tem rota e cada
+  // tentativa vira erro no log. Espaca em vez de insistir 10 vezes por
+  // segundo - a mao continua funcionando pelo console, sozinha.
+  if (Enlace::envia(IPAddress(REDE_IP_EMG), ENLACE_PORTA_EMG, limbia::PKT_TELEMETRIA, &t,
+                    sizeof(t)) == 0) {
+    proximo = agora + 500;
+  }
 }
 
 // Chamar todo loop.

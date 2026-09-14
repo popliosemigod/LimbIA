@@ -116,16 +116,30 @@ inline void tick() {
     Serial.println(F("[enlace] mao sem sinal"));
   }
 
-  // ---- comando, 20 Hz, sempre - e o que a mao usa como batimento ----
+  // ---- comando, 20 Hz - e o que a mao usa como batimento ----
+  //
+  // So se houver alguem na rede. Mandar pacote para um endereco que nao
+  // esta associado nao chega a lugar nenhum, custa tempo de loop e enche
+  // o log com erro do proprio core ("endPacket: could not send data: 12",
+  // que e o ENOMEM do lwIP quando nao ha rota) - medido na bancada, 20
+  // linhas por segundo enquanto a mao ainda estava ligando.
   static uint32_t proximo = 0;
   if ((int32_t)(agora - proximo) >= 0) {
     proximo = agora + ENLACE_COMANDO_MS;
-    limbia::PacoteComando c;
-    c.modo      = E.modo;
-    c.acao      = E.acao;
-    c.seqAcao   = E.seqAcao;
-    c.confianca = (uint8_t)(100.0f * E.prob[E.classe] + 0.5f);
-    Enlace::envia(IPAddress(REDE_IP_MAO), ENLACE_PORTA_MAO, limbia::PKT_COMANDO, &c, sizeof(c));
+    if (WiFi.softAPgetStationNum() > 0) {
+      limbia::PacoteComando c;
+      c.modo             = E.modo;
+      c.acao             = E.acao;
+      c.seqAcao          = E.seqAcao;
+      c.confianca        = (uint8_t)(100.0f * E.prob[E.classe] + 0.5f);
+      const bool enviado = Enlace::envia(IPAddress(REDE_IP_MAO), ENLACE_PORTA_MAO,
+                                         limbia::PKT_COMANDO, &c, sizeof(c)) != 0;
+      // Cliente na rede que nao e a mao (o PC do ajuste, por exemplo):
+      // espaca as tentativas em vez de insistir 20 vezes por segundo.
+      if (!enviado) proximo = agora + 500;
+    } else {
+      proximo = agora + 500;
+    }
   }
 
   // ---- envio confiavel: repete ate confirmar ou desistir ----

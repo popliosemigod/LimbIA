@@ -20,17 +20,13 @@ namespace Corr {
 static const uint8_t AMOSTRAS = 8;
 
 inline bool temSensor(uint8_t junta) {
-  return (SENSORES_INSTALADOS & LIMBIA_BIT(junta)) != 0;
+  return M.usaCorrente && (SENSORES_INSTALADOS & LIMBIA_BIT(junta)) != 0;
 }
 
+// A tabela de pinos mora no config.h, que e quem sabe qual das duas maos
+// esta sendo compilada.
 inline int pinoDaJunta(uint8_t junta) {
-  switch (junta) {
-    case limbia::MINDY: return PIN_CORR_MINDY;
-    case limbia::DONCARE: return PIN_CORR_DONCARE;
-    case limbia::FEIO: return PIN_CORR_FEIO;
-    case limbia::JULGADOR: return PIN_CORR_JULGADOR;
-    default: return -1;
-  }
+  return pinoDeCorrente(junta);
 }
 
 inline uint16_t leAdcMedio(uint8_t pino) {

@@ -53,6 +53,27 @@ static void checa(bool condicao, const char* nome) {
   }
 }
 
+// ---------------------------------------------------------------------
+//  Tamanho do banco de EMG
+//
+//  O ESP32-C3 nao tem unidade de ponto flutuante: cada multiplicacao da
+//  cadeia de filtros vira rotina de biblioteca. O banco completo, que a
+//  DevKit V1 roda em 44 s, passa de dez minutos la - e bancada parada
+//  esperando teste e teste que ninguem roda.
+//
+//  No C3 o banco encolhe. As verificacoes sao AS MESMAS; o que muda e
+//  quantos casos cada uma ve. O numero que interessa medir no C3 e o da
+//  secao [11] - o custo por amostra, porque e o C3 que filtra o EMG a
+//  1 kHz de verdade.
+// ---------------------------------------------------------------------
+#if CONFIG_IDF_TARGET_ESP32C3
+#define AUTOTESTE_CICLOS 3
+#define AUTOTESTE_GESTOS 12
+#else
+#define AUTOTESTE_CICLOS 6
+#define AUTOTESTE_GESTOS 60
+#endif
+
 // Gerador deterministico: o mesmo banco em toda execucao, entao dois
 // resultados diferentes significam mudanca no codigo, nao no sorteio.
 static uint32_t semente = 20260909u;
@@ -714,7 +735,7 @@ static void testeQualidade() {
   Serial.println(
       F("     cenario                | eletrodo 1 (flexor)                            "
         "| eletrodo 2 (extensor)                          | acerto"));
-  const uint16_t CICLOS = 6;
+  const uint16_t CICLOS = AUTOTESTE_CICLOS;
 
   // A - os dois no lugar certo
   calZera(&calibracaoBoa);
@@ -935,9 +956,10 @@ static void testeUso() {
   }
 
   ResultadoUso r;
-  rodaUso(m, usuarioBemPosicionado(), 60, false, &r);
+  rodaUso(m, usuarioBemPosicionado(), AUTOTESTE_GESTOS, false, &r);
   const float acertoJanela = r.janelas ? (float)r.acertosJanela / r.janelas : 0;
-  Serial.printf("     60 gestos alternados, forca de 60%% a 100%%, 1 a 2,5 s cada\n");
+  Serial.printf("     %u gestos alternados, forca de 60%% a 100%%, 1 a 2,5 s cada\n",
+                AUTOTESTE_GESTOS);
   Serial.printf("     por janela de 50 ms: acerto medido %.1f%% | previsto pelo modelo >= %.1f%%\n",
                 acertoJanela * 100, acertoPrevisto(piorDelta) * 100);
   Serial.printf("     intencoes atendidas: %u/%u | trocas erradas: %u | espurias em repouso: %u\n",
@@ -964,7 +986,7 @@ static void testeUso() {
     for (uint8_t k = 0; k < N_CLASSES_EMG; k++) cansado.ganho[ch][k] *= 0.35f;
   }
   ResultadoUso rc;
-  rodaUso(m, cansado, 40, false, &rc);
+  rodaUso(m, cansado, AUTOTESTE_GESTOS * 2 / 3, false, &rc);
   Serial.printf("     cansado (35%% da forca): atendidas %u/%u | erradas %u | espurias %u\n",
                 rc.atendidas, rc.intencoes, rc.erradas, rc.espurias);
   checa(rc.erradas == 0 && rc.espurias == 0, "forca fraca: deixa de agir, mas nunca age errado");
@@ -976,7 +998,7 @@ static void testeUso() {
     const Calibracao_& cd = calibracaoDificil;
     if (calPronta(cd)) {
       ResultadoUso rd;
-      rodaUso(cd.modelo, usuarioDificil(), 60, false, &rd);
+      rodaUso(cd.modelo, usuarioDificil(), AUTOTESTE_GESTOS, false, &rd);
       Serial.printf(
           "     antebraco dificil (calibracao liberou): atendidas %u/%u | erradas %u | "
           "espurias %u\n",
@@ -993,7 +1015,7 @@ static void testeUso() {
   // que conseguiria usar a protese - e isso tambem e defeito.
   if (calibracaoRuim.modelo.valido) {
     ResultadoUso rr;
-    rodaUso(calibracaoRuim.modelo, usuarioSemMusculo(), 60, false, &rr);
+    rodaUso(calibracaoRuim.modelo, usuarioSemMusculo(), AUTOTESTE_GESTOS, false, &rr);
     Serial.printf(
         "     sem musculo util, USADO A FORCA: atendidas %u/%u | erradas %u | espurias %u "
         "| acerto por janela %.0f%%\n",

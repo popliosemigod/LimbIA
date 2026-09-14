@@ -74,10 +74,13 @@ inline bool carregaModelo() {
   memset(&E.modelo, 0, sizeof(E.modelo));
   E.modeloSalvo = false;
   Preferences p;
-  if (!p.begin(NVS_EMG, true)) return false;
+  // Escrita, e nao leitura: o namespace nasce aqui na primeira vez, e o
+  // boot de uma placa nova nao imprime erro do core sobre o que ainda nao
+  // existe. isKey pelo mesmo motivo.
+  if (!p.begin(NVS_EMG, false)) return false;
   BlocoModelo b;
-  const bool lido =
-      p.getBytesLength("modelo") == sizeof(b) && p.getBytes("modelo", &b, sizeof(b)) == sizeof(b);
+  const bool lido = p.isKey("modelo") && p.getBytesLength("modelo") == sizeof(b) &&
+                    p.getBytes("modelo", &b, sizeof(b)) == sizeof(b);
   p.end();
   // Bloco de outra versao, ou com numero que nao e numero: recusa. Modelo
   // quebrado classificando musculo move mao para o lado errado.

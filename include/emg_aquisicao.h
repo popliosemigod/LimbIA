@@ -94,7 +94,13 @@ inline void begin() {
   for (uint8_t ch = 0; ch < limbia::N_CANAIS_EMG; ch++) limbia::cadeiaConfigura(&cadeias()[ch], p);
 
   fila() = xQueueCreate(8, sizeof(Janela));
-  xTaskCreatePinnedToCore(tarefa, "emg", 4096, nullptr, 5, nullptr, 1);
+  // Fixada num nucleo por exigencia do ESP-IDF para tarefa que usa FPU. No
+  // ESP32-C3, que e de um nucleo so, o unico nucleo e o 0 - e ali a tarefa
+  // divide espaco com o radio, que tem prioridade maior. O ritmo se mantem
+  // porque vTaskDelayUntil nao acumula atraso, e a janela conta AMOSTRAS,
+  // nao tempo de relogio.
+  const BaseType_t nucleo = portNUM_PROCESSORS > 1 ? 1 : 0;
+  xTaskCreatePinnedToCore(tarefa, "emg", 4096, nullptr, 5, nullptr, nucleo);
 }
 
 // Proxima janela, se houver. Nao bloqueia.
