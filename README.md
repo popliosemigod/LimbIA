@@ -90,16 +90,21 @@ pio run -e emg_ota -t upload
 | [04](docs/04-propriocepcao.md) | como a mão descobre a forma do objeto |
 | [05](docs/05-emg-e-a-ia.md) | o EMG, a calibração por pessoa e a IA |
 | [06](docs/06-rede-tela-e-ota.md) | a rede, a tela e o OTA |
+| [07](docs/07-roteiro-de-bancada.md) | **roteiro de ensaios**, com as previsões |
 
-## Em aberto
+## Em aberto — a fase de ensaios
 
-1. Ligar um motor e medir: velocidade, limiares de corrente e arranque são chute
-   educado.
-2. Medir o tempo de curso de cada dedo — é a calibração desta mão.
-3. Primeiro eletrodo na pele, com a placa do EMG na bateria.
-4. Abrir a tela num navegador.
-5. Primeiro ensaio de preensão com objeto real.
-6. A órtese, que dá metade do nome ao projeto.
+O roteiro dos seis ensaios, com as previsões escritas antes de medir, está em
+[`docs/07-roteiro-de-bancada.md`](docs/07-roteiro-de-bancada.md).
+
+1. Um dedo se movendo, com cadência controlada.
+2. O mesmo dedo com ACS712 — de onde saem os três limiares de corrente.
+3. A mão inteira, e o primeiro acerto de campo do classificador de preensão.
+4. O primeiro eletrodo na pele.
+5. A prótese em uso.
+6. Gravação pela rede.
+
+Depois disso, a órtese — que dá metade do nome ao projeto.
 
 ## Crédito
 
