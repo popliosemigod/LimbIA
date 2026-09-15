@@ -44,6 +44,14 @@ static volatile bool reconfigurar    = false;
 static bool entradaBruta             = EMG_ENTRADA_BRUTA != 0;
 static volatile uint32_t descartados = 0;
 
+// Captura crua: 1 s de amostras sem filtro, para ver o espectro no PC
+// (test/host/espectro_emg.py). E o que separa musculo de rede eletrica.
+static const uint16_t N_CAPTURA = 1000;
+static uint16_t captura[N_CAPTURA];
+static volatile bool capturando    = false;
+static volatile bool capturaPronta = false;
+static uint16_t nCaptura           = 0;
+
 // ---------------------------------------------------------------------
 //  Amostragem a 1 kHz numa tarefa - o mesmo esquema de emg_aquisicao.h,
 //  para um canal. O loop pode atrasar imprimindo; a amostragem nao.
@@ -68,6 +76,13 @@ static void tarefa(void*) {
     }
 
     const uint16_t bruto = analogRead(PIN_EMG_TESTE);
+    if (capturando) {
+      captura[nCaptura++] = bruto;
+      if (nCaptura >= N_CAPTURA) {
+        capturando    = false;
+        capturaPronta = true;
+      }
+    }
     if (bruto < b.minimo) b.minimo = bruto;
     if (bruto > b.maximo) b.maximo = bruto;
     if (bruto <= EMG_TRILHO_BAIXO || bruto >= EMG_TRILHO_ALTO) b.saturadas++;
@@ -108,6 +123,7 @@ static void ajuda() {
   Serial.println(F("============ LimbIA - teste de EMG no GPIO 4 ============"));
   Serial.println(F("  r  medir o repouso de novo   z  zera o pico"));
   Serial.println(F("  v  alterna texto / Serial Plotter"));
+  Serial.println(F("  d  captura 1 s cru (test/host/espectro_emg.py)"));
   Serial.println(F("  e  alterna entrada crua / envelope pronto (MyoWare ENV)"));
   Serial.printf("  entrada: %s\n", entradaBruta ? "CRUA (RAW, AD8232)" : "ENVELOPE (ENV)");
   Serial.println(F("  Notebook na BATERIA com o eletrodo na pele."));
@@ -142,6 +158,13 @@ static void console() {
         reconfigurar = true;
         Serial.printf("  entrada: %s\n", entradaBruta ? "CRUA" : "ENVELOPE");
         comecaRepouso();
+        break;
+      case 'd':
+      case 'D':
+        if (!capturando && !capturaPronta) {
+          nCaptura   = 0;
+          capturando = true;
+        }
         break;
       case '?': ajuda(); break;
       default: break;
@@ -192,6 +215,16 @@ void setup() {
 
 void loop() {
   console();
+
+  if (capturaPronta) {
+    Serial.printf("CAPTURA_INICIO fs=%u n=%u\n", EMG_FS_HZ, N_CAPTURA);
+    for (uint16_t i = 0; i < N_CAPTURA; i++) {
+      Serial.print(captura[i]);
+      Serial.print((i % 20 == 19) ? '\n' : ',');
+    }
+    Serial.println(F("CAPTURA_FIM"));
+    capturaPronta = false;
+  }
 
   Bloco b;
   while (xQueueReceive(fila, &b, 0) == pdTRUE) {
