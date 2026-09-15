@@ -1,0 +1,251 @@
+// =====================================================================
+//  LimbIA - teste_emg.cpp
+//  Primeiro sinal de musculo: UM eletrodo no GPIO 4 do ESP32-C3.
+//
+//  Sem rede, sem tela, sem modelo. So a mesma cadeia de filtros da
+//  protese (limbia_emg: passa-altas 20 Hz, notch 60 Hz, retificacao,
+//  envelope 4 Hz) e uma barra no console. Serve para responder UMA
+//  pergunta antes de qualquer calibracao: o eletrodo enxerga o musculo?
+//
+//  Ao ligar, mede 3 s de repouso. Depois mostra o envelope e quantas
+//  vezes ele esta acima do repouso - a mesma razao que a tela de ajuste
+//  exige que passe de 3x.
+//
+//  SEGURANCA: eletrodo na pele com a placa no USB so com o notebook FORA
+//  DA TOMADA (na bateria). Nunca com PC de mesa.
+//
+//  Console:  r  medir o repouso de novo     v  modo Serial Plotter
+//            e  alterna entrada crua / envelope pronto (MyoWare ENV)
+//            z  zera o pico                 ?  ajuda
+// =====================================================================
+#include <Arduino.h>
+
+#include <limbia_emg.h>
+
+#include "config_emg.h"
+
+static const uint16_t AMOSTRAS_BLOCO  = 20;    // 20 ms por bloco = 50 Hz na saida
+static const uint32_t REPOUSO_MS      = 3000;  // quanto tempo medir o repouso
+static const uint8_t BLOCOS_POR_LINHA = 5;     // uma linha de texto a cada 100 ms
+static const uint8_t LARGURA_BARRA    = 30;
+static const float RAZAO_TOPO_BARRA   = 30.0f;  // a barra enche em 30x o repouso
+
+struct Bloco {
+  float envelope;   // media do envelope no bloco, em contagens
+  uint16_t minimo;  // do sinal cru, para o pico-a-pico
+  uint16_t maximo;
+  uint16_t saturadas;
+  uint16_t mv;  // nivel DC do pino, uma leitura calibrada por bloco
+};
+
+static QueueHandle_t fila = nullptr;
+static limbia::CadeiaEmg cadeia;
+static volatile bool reconfigurar    = false;
+static bool entradaBruta             = EMG_ENTRADA_BRUTA != 0;
+static volatile uint32_t descartados = 0;
+
+// ---------------------------------------------------------------------
+//  Amostragem a 1 kHz numa tarefa - o mesmo esquema de emg_aquisicao.h,
+//  para um canal. O loop pode atrasar imprimindo; a amostragem nao.
+// ---------------------------------------------------------------------
+static void tarefa(void*) {
+  Bloco b;
+  float soma  = 0;
+  uint16_t n  = 0;
+  b.minimo    = 4095;
+  b.maximo    = 0;
+  b.saturadas = 0;
+
+  TickType_t ultimo = xTaskGetTickCount();
+  for (;;) {
+    vTaskDelayUntil(&ultimo, pdMS_TO_TICKS(1000 / EMG_FS_HZ));
+
+    if (reconfigurar) {
+      limbia::ParametrosCadeia p = parametrosCadeia();
+      p.entradaBruta             = entradaBruta;
+      limbia::cadeiaConfigura(&cadeia, p);
+      reconfigurar = false;
+    }
+
+    const uint16_t bruto = analogRead(PIN_EMG_TESTE);
+    if (bruto < b.minimo) b.minimo = bruto;
+    if (bruto > b.maximo) b.maximo = bruto;
+    if (bruto <= EMG_TRILHO_BAIXO || bruto >= EMG_TRILHO_ALTO) b.saturadas++;
+    soma += limbia::cadeiaProcessa(&cadeia, (float)bruto);
+
+    if (++n >= AMOSTRAS_BLOCO) {
+      b.envelope = soma / n;
+      b.mv       = analogReadMilliVolts(PIN_EMG_TESTE);
+      if (xQueueSend(fila, &b, 0) != pdTRUE) descartados++;
+      soma        = 0;
+      n           = 0;
+      b.minimo    = 4095;
+      b.maximo    = 0;
+      b.saturadas = 0;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------
+//  Estado do console
+// ---------------------------------------------------------------------
+static bool plotter           = false;
+static bool medindoRepouso    = true;
+static uint32_t inicioRepouso = 0;
+static uint32_t ultimoAviso   = 0;
+static float somaRepouso      = 0;
+static uint32_t nRepouso      = 0;
+static float repouso          = 0;
+static float pico             = 0;
+
+// acumulado da linha de texto
+static float lEnv   = 0;
+static uint16_t lPP = 0, lSat = 0, lMv = 0;
+static uint8_t lN = 0;
+
+static void ajuda() {
+  Serial.println();
+  Serial.println(F("============ LimbIA - teste de EMG no GPIO 4 ============"));
+  Serial.println(F("  r  medir o repouso de novo   z  zera o pico"));
+  Serial.println(F("  v  alterna texto / Serial Plotter"));
+  Serial.println(F("  e  alterna entrada crua / envelope pronto (MyoWare ENV)"));
+  Serial.printf("  entrada: %s\n", entradaBruta ? "CRUA (RAW, AD8232)" : "ENVELOPE (ENV)");
+  Serial.println(F("  Notebook na BATERIA com o eletrodo na pele."));
+  Serial.println(F("========================================================="));
+}
+
+static void comecaRepouso() {
+  medindoRepouso = true;
+  inicioRepouso  = millis();
+  ultimoAviso    = 0;
+  somaRepouso    = 0;
+  nRepouso       = 0;
+  pico           = 0;
+  Serial.println(F("\n>>> RELAXE o braco por 3 segundos: medindo o repouso..."));
+}
+
+static void console() {
+  while (Serial.available()) {
+    switch (Serial.read()) {
+      case 'r':
+      case 'R': comecaRepouso(); break;
+      case 'z':
+      case 'Z':
+        pico = 0;
+        Serial.println(F("  pico zerado"));
+        break;
+      case 'v':
+      case 'V': plotter = !plotter; break;
+      case 'e':
+      case 'E':
+        entradaBruta = !entradaBruta;
+        reconfigurar = true;
+        Serial.printf("  entrada: %s\n", entradaBruta ? "CRUA" : "ENVELOPE");
+        comecaRepouso();
+        break;
+      case '?': ajuda(); break;
+      default: break;
+    }
+  }
+}
+
+// A barra e logaritmica: 1x = vazia, RAZAO_TOPO_BARRA = cheia. Musculo
+// vai de 3x a 30x do repouso, e numa escala linear tudo abaixo de 10x
+// pareceria parado.
+static void imprimeLinha(float env, uint16_t pp, uint16_t mv, float satPct) {
+  const float razao = repouso > 0.5f ? env / repouso : 0;
+  int cheio         = 0;
+  if (razao > 1.0f) cheio = (int)(log(razao) / log(RAZAO_TOPO_BARRA) * LARGURA_BARRA + 0.5f);
+  if (cheio > LARGURA_BARRA) cheio = LARGURA_BARRA;
+  const int marca = (int)(log(QUAL_RAZAO_OK) / log(RAZAO_TOPO_BARRA) * LARGURA_BARRA + 0.5f);
+
+  char barra[LARGURA_BARRA + 1];
+  for (int i = 0; i < LARGURA_BARRA; i++) barra[i] = i < cheio ? '#' : (i == marca ? ':' : ' ');
+  barra[LARGURA_BARRA] = 0;
+
+  Serial.printf("env %5.0f  %5.1fx [%s] %s pp %4u  dc %4u mV", env, razao, barra,
+                razao >= QUAL_RAZAO_OK ? "MUSCULO" : "       ", pp, mv);
+  if (satPct > 2.0f) Serial.printf("  SATURANDO %.0f%%", satPct);
+  if (mv < 300 || mv > 2400) Serial.print(F("  DC fora do meio"));
+  Serial.println();
+}
+
+void setup() {
+  Serial.begin(115200);
+  // O C3 com USB nativo perde o que imprime antes de o PC abrir a porta.
+  const uint32_t t0 = millis();
+  while (!Serial && millis() - t0 < 3000) delay(10);
+
+  analogReadResolution(12);
+  analogSetPinAttenuation(PIN_EMG_TESTE, ADC_11db);
+
+  limbia::ParametrosCadeia p = parametrosCadeia();
+  p.entradaBruta             = entradaBruta;
+  limbia::cadeiaConfigura(&cadeia, p);
+
+  fila = xQueueCreate(16, sizeof(Bloco));
+  xTaskCreatePinnedToCore(tarefa, "emg", 4096, nullptr, 5, nullptr, portNUM_PROCESSORS > 1 ? 1 : 0);
+
+  ajuda();
+  comecaRepouso();
+}
+
+void loop() {
+  console();
+
+  Bloco b;
+  while (xQueueReceive(fila, &b, 0) == pdTRUE) {
+    if (medindoRepouso) {
+      // O primeiro meio segundo e o filtro assentando: fica de fora.
+      const uint32_t decorrido = millis() - inicioRepouso;
+      if (decorrido > 500) {
+        somaRepouso += b.envelope;
+        nRepouso++;
+      }
+      if (decorrido / 1000 != ultimoAviso && decorrido < REPOUSO_MS && !plotter) {
+        ultimoAviso = decorrido / 1000;
+        Serial.printf("    %lu...\n", (unsigned long)(3 - ultimoAviso));
+      }
+      if (decorrido >= REPOUSO_MS) {
+        repouso        = nRepouso ? somaRepouso / nRepouso : 0;
+        medindoRepouso = false;
+        Serial.printf(">>> repouso = %.1f contagens (dc %u mV). Agora FECHE a mao com forca.\n",
+                      repouso, b.mv);
+        if (repouso < 0.5f) {
+          Serial.println(F("    repouso quase zero: pino sem sinal? Confira fio e alimentacao."));
+        }
+      }
+      continue;
+    }
+
+    if (b.envelope > pico) pico = b.envelope;
+
+    if (plotter) {
+      Serial.printf("envelope:%.1f,repouso:%.1f,limiar3x:%.1f\n", b.envelope, repouso,
+                    repouso * QUAL_RAZAO_OK);
+      continue;
+    }
+
+    lEnv += b.envelope;
+    const uint16_t pp = b.maximo - b.minimo;
+    if (pp > lPP) lPP = pp;
+    lSat += b.saturadas;
+    lMv = b.mv;
+    if (++lN >= BLOCOS_POR_LINHA) {
+      imprimeLinha(lEnv / lN, lPP, lMv, 100.0f * lSat / (lN * AMOSTRAS_BLOCO));
+      lEnv = 0;
+      lPP  = 0;
+      lSat = 0;
+      lN   = 0;
+    }
+  }
+
+  // Resumo a cada 5 s: o numero que vai para o diario.
+  static uint32_t ultimoResumo = 0;
+  if (!plotter && !medindoRepouso && millis() - ultimoResumo >= 5000) {
+    ultimoResumo = millis();
+    Serial.printf("--- repouso %.1f | pico %.1f | pico/repouso %.1fx | blocos perdidos %lu\n",
+                  repouso, pico, repouso > 0.5f ? pico / repouso : 0.0f,
+                  (unsigned long)descartados);
+  }
+}

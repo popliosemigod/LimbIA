@@ -28,12 +28,14 @@
 #if CONFIG_IDF_TARGET_ESP32C3
 #define PIN_EMG_FLEXOR   0  // ADC1_CH0 - eletrodo 1, face da palma
 #define PIN_EMG_EXTENSOR 1  // ADC1_CH1 - eletrodo 2, face do dorso
+#define PIN_EMG_TESTE    4  // ADC1_CH4 - so o ambiente emg_teste (um eletrodo)
 #define PIN_LED_PLACA    8  // LED da placa - aceso em nivel BAIXO no SuperMini
 #define PIN_BOTAO        9  // BOOT: segurar 10 s volta a rede ao de fabrica
 #define LED_ATIVO_BAIXO  1
 #else
 #define PIN_EMG_FLEXOR   34  // ADC1_CH6
 #define PIN_EMG_EXTENSOR 35  // ADC1_CH7
+#define PIN_EMG_TESTE    32  // ADC1_CH4 - so o ambiente emg_teste
 #define PIN_LED_PLACA    2
 #define PIN_BOTAO        0
 #define LED_ATIVO_BAIXO  0
