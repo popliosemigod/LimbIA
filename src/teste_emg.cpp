@@ -17,9 +17,9 @@
 //  Console:  r  medir o repouso de novo     v  modo Serial Plotter
 //            e  alterna pino RAW / pino SIG (envelope) do MyoWare
 //            d  captura 1 s cru (test/host/espectro_emg.py)
+//            z  zera o pico                 ?  ajuda
 //
 //  Sensor: MyoWare AT-04-001. + no 3V3, - no GND, RAW no GPIO 4.
-//            z  zera o pico                 ?  ajuda
 // =====================================================================
 #include <Arduino.h>
 
@@ -115,6 +115,10 @@ static float somaRepouso      = 0;
 static uint32_t nRepouso      = 0;
 static float repouso          = 0;
 static float pico             = 0;
+// Saturacao desde o ultimo resumo: com o sinal batendo no trilho, o
+// envelope mede o recorte, nao o musculo, e a razao nao vale nada.
+static uint32_t satResumo      = 0;
+static uint32_t amostrasResumo = 0;
 
 // acumulado da linha de texto
 static float lEnv   = 0;
@@ -180,8 +184,10 @@ static void console() {
 // vai de 3x a 30x do repouso, e numa escala linear tudo abaixo de 10x
 // pareceria parado.
 static void imprimeLinha(float env, uint16_t pp, uint16_t mv, float satPct) {
-  const float razao = repouso > 0.5f ? env / repouso : 0;
-  int cheio         = 0;
+  // Sinal no trilho: o envelope mede o recorte. Nunca chamar isso de musculo.
+  const bool saturou = satPct > QUAL_SATURACAO * 100.0f;
+  const float razao  = repouso > 0.5f ? env / repouso : 0;
+  int cheio          = 0;
   if (razao > 1.0f) cheio = (int)(log(razao) / log(RAZAO_TOPO_BARRA) * LARGURA_BARRA + 0.5f);
   if (cheio > LARGURA_BARRA) cheio = LARGURA_BARRA;
   const int marca = (int)(log(QUAL_RAZAO_OK) / log(RAZAO_TOPO_BARRA) * LARGURA_BARRA + 0.5f);
@@ -191,8 +197,8 @@ static void imprimeLinha(float env, uint16_t pp, uint16_t mv, float satPct) {
   barra[LARGURA_BARRA] = 0;
 
   Serial.printf("env %5.0f  %5.1fx [%s] %s pp %4u  dc %4u mV", env, razao, barra,
-                razao >= QUAL_RAZAO_OK ? "MUSCULO" : "       ", pp, mv);
-  if (satPct > 2.0f) Serial.printf("  SATURANDO %.0f%%", satPct);
+                razao >= QUAL_RAZAO_OK && !saturou ? "MUSCULO" : "       ", pp, mv);
+  if (saturou) Serial.printf("  SATURANDO %.0f%%", satPct);
   if (mv < 300 || mv > 2400) Serial.print(F("  DC fora do meio"));
   Serial.println();
 }
@@ -256,6 +262,8 @@ void loop() {
     }
 
     if (b.envelope > pico) pico = b.envelope;
+    satResumo += b.saturadas;
+    amostrasResumo += AMOSTRAS_BLOCO;
 
     if (plotter) {
       Serial.printf("envelope:%.1f,repouso:%.1f,limiar3x:%.1f\n", b.envelope, repouso,
@@ -280,9 +288,18 @@ void loop() {
   // Resumo a cada 5 s: o numero que vai para o diario.
   static uint32_t ultimoResumo = 0;
   if (!plotter && !medindoRepouso && millis() - ultimoResumo >= 5000) {
-    ultimoResumo = millis();
-    Serial.printf("--- repouso %.1f | pico %.1f | pico/repouso %.1fx | blocos perdidos %lu\n",
+    ultimoResumo       = millis();
+    const float satPct = amostrasResumo ? 100.0f * satResumo / amostrasResumo : 0.0f;
+    Serial.printf("--- repouso %.1f | pico %.1f | pico/repouso %.1fx | blocos perdidos %lu",
                   repouso, pico, repouso > 0.5f ? pico / repouso : 0.0f,
                   (unsigned long)descartados);
+    if (satPct > QUAL_SATURACAO * 100.0f) {
+      Serial.printf(
+          "\n    RAZAO INVALIDA: %.1f%% das amostras no trilho. Refaca o contato e mande r.",
+          satPct);
+    }
+    Serial.println();
+    satResumo      = 0;
+    amostrasResumo = 0;
   }
 }
