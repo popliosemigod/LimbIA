@@ -15,7 +15,10 @@
 //  DA TOMADA (na bateria). Nunca com PC de mesa.
 //
 //  Console:  r  medir o repouso de novo     v  modo Serial Plotter
-//            e  alterna entrada crua / envelope pronto (MyoWare ENV)
+//            e  alterna pino RAW / pino SIG (envelope) do MyoWare
+//            d  captura 1 s cru (test/host/espectro_emg.py)
+//
+//  Sensor: MyoWare AT-04-001. + no 3V3, - no GND, RAW no GPIO 4.
 //            z  zera o pico                 ?  ajuda
 // =====================================================================
 #include <Arduino.h>
@@ -124,8 +127,9 @@ static void ajuda() {
   Serial.println(F("  r  medir o repouso de novo   z  zera o pico"));
   Serial.println(F("  v  alterna texto / Serial Plotter"));
   Serial.println(F("  d  captura 1 s cru (test/host/espectro_emg.py)"));
-  Serial.println(F("  e  alterna entrada crua / envelope pronto (MyoWare ENV)"));
-  Serial.printf("  entrada: %s\n", entradaBruta ? "CRUA (RAW, AD8232)" : "ENVELOPE (ENV)");
+  Serial.println(F("  e  alterna pino RAW / pino SIG (envelope) do MyoWare"));
+  Serial.printf("  entrada: %s\n", entradaBruta ? "RAW do MyoWare" : "SIG do MyoWare (envelope)");
+  Serial.println(F("  MyoWare: + no 3V3, - no GND, RAW no GPIO 4, chave em ON."));
   Serial.println(F("  Notebook na BATERIA com o eletrodo na pele."));
   Serial.println(F("========================================================="));
 }

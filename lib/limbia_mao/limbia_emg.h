@@ -100,8 +100,8 @@ float biquadGanhoMedido(const Biquad& modelo, float freqHz, float fsHz);
 // ---------------------------------------------------------------------
 //  A cadeia de um canal
 //
-//  Entrada BRUTA (MyoWare 2.0 na saida RAW, BioAmp EXG Pill, modulos com
-//  AD8232): o sinal oscila em torno do meio da escala.
+//  Entrada BRUTA (pino RAW do MyoWare AT-04-001, o da bancada): o sinal
+//  oscila em torno do meio da escala (+Vs/2).
 //      passa-altas 20 Hz -> notch 60 Hz -> |x| -> passa-baixas 4 Hz
 //  - passa-altas: tira o DC e o artefato de movimento do cabo, que mora
 //    abaixo de 20 Hz e nao tem nada de musculo;
@@ -110,7 +110,7 @@ float biquadGanhoMedido(const Biquad& modelo, float freqHz, float fsHz);
 //    contracao. 4 Hz porque a intencao de abrir ou fechar a mao nao muda
 //    mais rapido que isso - o que muda mais rapido e ruido.
 //
-//  Entrada de ENVELOPE (MyoWare na saida ENV, "Muscle Sensor V3"): o
+//  Entrada de ENVELOPE (pino SIG do MyoWare AT-04-001): o
 //  modulo ja retificou e suavizou em hardware. Aqui so entra o
 //  passa-baixas, para tirar o que sobrou de ondulacao.
 // ---------------------------------------------------------------------

@@ -42,20 +42,25 @@
 #endif
 
 // ---------------------------------------------------------------------
-//  O SENSOR
+//  O SENSOR: MyoWare AT-04-001 (Advancer Technologies, 2015)
 //
-//  Nao ha sensor de EMG no estoque. A cadeia aceita os dois tipos de
-//  modulo que existem no mercado:
+//  Um por musculo. Os dois eletrodos encaixam na propria placa; a
+//  referencia vem pelo cabo. A placa tem duas saidas:
 //
-//  EMG_ENTRADA_BRUTA 1 - sinal cru, oscilando no meio da escala: MyoWare
-//    2.0 na saida RAW, BioAmp EXG Pill, placas com AD8232. O firmware
-//    filtra tudo. E o recomendado: o filtro fica sob controle, e a
-//    frequencia de amostragem de 1 kHz ve o sinal inteiro.
-//  EMG_ENTRADA_BRUTA 0 - envelope pronto: MyoWare na saida ENV, "Muscle
-//    Sensor V3". O modulo ja retificou; aqui so se suaviza.
+//  RAW - EMG amplificado, centrado em +Vs/2 (1,65 V em 3,3 V). E A QUE SE
+//    LIGA NO ADC: EMG_ENTRADA_BRUTA 1, o firmware filtra tudo, e a
+//    amostragem de 1 kHz ve o sinal inteiro.
+//  SIG - envelope pronto (retificado e integrado pelo modulo), de 0 a
+//    +Vs. So com EMG_ENTRADA_BRUTA 0: o filtro deixa de ser nosso.
 //
-//  ALIMENTAR O MODULO EM 3,3 V. Em 5 V a saida passa do teto do ADC e o
-//  pino morre calado, lendo valor fixo - mesma licao do ACS712.
+//  ALIMENTAR EM 3,3 V (o modulo aceita 2,9 a 5,7 V). A saida vai ate +Vs:
+//  em 5 V passa do teto do ADC e o pino le valor fixo - mesma licao do
+//  ACS712. A placa tem CHAVE ON/OFF: desligada, o pino so ve ruido.
+//
+//  GANHO no trimpot (anti-horario aumenta). O amplificador e CMOS e
+//  demora a se recuperar quando satura: ajustar para a contracao forte
+//  NAO bater no trilho. No C3, o ADC em 11 dB e garantido ate ~2,5 V -
+//  pico de RAW acima disso achata antes de contar como saturacao.
 // ---------------------------------------------------------------------
 #define EMG_ENTRADA_BRUTA 1
 

@@ -153,15 +153,26 @@ não por cabo. Não existe caminho elétrico entre o PC e a pessoa.
 
 ## O sensor
 
-Não há sensor de EMG no estoque. O firmware aceita os dois tipos de módulo:
+**MyoWare AT-04-001** (Advancer Technologies, 2015), um por músculo. Os dois
+eletrodos encaixam na própria placa; a referência vem por cabo. A placa tem duas
+saídas, e o firmware sabe ler as duas:
 
-| `EMG_ENTRADA_BRUTA` | Módulo | O que o firmware faz |
+| `EMG_ENTRADA_BRUTA` | Pino do MyoWare | O que o firmware faz |
 | --- | --- | --- |
-| **1** (escolhido) | MyoWare 2.0 na saída RAW, BioAmp EXG Pill, placas com AD8232 | filtra tudo: passa-altas, notch, retificação e envelope |
-| 0 | MyoWare na saída ENV, "Muscle Sensor V3" | o módulo já retificou; aqui só se suaviza |
+| **1** (escolhido) | **RAW** — EMG amplificado, centrado em +Vs/2 | filtra tudo: passa-altas, notch, retificação e envelope |
+| 0 | SIG — envelope pronto, de 0 a +Vs | o módulo já retificou; aqui só se suaviza |
 
-**Alimentar o módulo em 3,3 V.** Em 5 V a saída passa do teto do ADC e o pino
-morre calado, lendo valor fixo — a mesma lição do ACS712.
+O RAW foi o escolhido porque o filtro fica sob nosso controle, e a amostragem de
+1 kHz vê o sinal inteiro.
+
+- **Alimentar em 3,3 V** (o módulo aceita 2,9 a 5,7 V). A saída vai até +Vs: em
+  5 V passa do teto do ADC e o pino lê valor fixo — a mesma lição do ACS712.
+- **Chave ON/OFF na placa.** Desligada, o pino só capta a rede elétrica.
+- **Ganho no trimpot** (anti-horário aumenta). O amplificador é CMOS e demora a
+  se recuperar da saturação; o manual pede ganho que não sature na contração
+  forte. No C3, o ADC em 11 dB é garantido até ~2,5 V.
+- **Posição:** meio do ventre muscular, alinhado com as fibras; referência sobre
+  osso. Fora do meio do músculo, o manual mostra o sinal caindo a uma fração.
 
 ## O que foi medido, e onde
 

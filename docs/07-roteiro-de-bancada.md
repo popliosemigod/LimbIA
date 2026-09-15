@@ -139,9 +139,32 @@ autoteste vieram de casos que eu mesmo gerei.
 > fica **na bateria**. Nunca ligada ao PC por USB. O ajuste é pela rede Wi-Fi da
 > própria prótese, e é por isso que ele foi feito assim.
 
-**Montagem:** eletrodo 1 na face de dentro do antebraço (flexores), eletrodo 2 na
-face de fora (extensores), referência sobre o cotovelo. Módulo alimentado em
-**3,3 V** — em 5 V a saída passa do teto do ADC e o pino lê valor fixo.
+> É a configuração (a) do manual do MyoWare: nada ligado à rede elétrica. O
+> notebook fora da tomada conta como bateria.
+
+**Sensor:** dois **MyoWare AT-04-001**, um por músculo.
+
+| MyoWare | ESP32-C3 |
+| --- | --- |
+| `+` | 3V3 (aceita 2,9 a 5,7 V; **5 V passa do teto do ADC**) |
+| `−` | GND |
+| **`RAW`** | ADC (GPIO 0 e 1; no teste de um canal, GPIO 4) |
+| `SIG` | não ligar — é o envelope pronto, e o filtro deixa de ser nosso |
+
+Chave da placa em **ON**. Ganho no trimpot de fábrica até o sinal funcionar.
+
+**Montagem**, conforme o manual:
+
+1. pele limpa com sabão;
+2. eletrodos encaixados no sensor **antes** de colar (encaixar depois machuca);
+3. sensor 1 sobre o ventre dos **flexores** (face de dentro, no terço perto do
+   cotovelo), **alinhado com as fibras**: um eletrodo no meio do músculo, o
+   outro na direção do punho;
+4. sensor 2 do mesmo jeito sobre os **extensores** (face de fora);
+5. o cabo da referência de cada um sobre o **osso do cotovelo**.
+
+Longe do meio do músculo — sobre o tendão ou fora da linha dele — o manual mostra
+o sinal caindo a uma fração. É exatamente o que a barra da tela precisa pegar.
 
 **Procedimento**
 
