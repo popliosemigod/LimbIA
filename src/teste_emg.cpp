@@ -49,7 +49,14 @@ struct Bloco {
 // Eletrodo solto pelo proprio chip (AD8232, pinos LOD+ e LOD-). Com
 // MyoWare os pinos ficam em nivel baixo e isto nunca acusa - por isso
 // nao atrapalha os dois sensores.
+// Desligavel pelo console: se os pinos LO estiverem mal ligados, ou o
+// modulo em outro modo de leads-off, eles acusam solto para sempre e
+// travam a medida. Ignorar e pior do que medir, mas melhor do que nao
+// poder medir - por isso o aviso continua aparecendo na tela.
+static bool usaLo = true;
+
 static uint8_t leSolto() {
+  if (!usaLo) return 0;
   uint8_t s = 0;
   if (digitalRead(PIN_LO_MAIS)) s |= 1;
   if (digitalRead(PIN_LO_MENOS)) s |= 2;
@@ -156,6 +163,7 @@ static void ajuda() {
   Serial.println(F("  v  alterna texto / Serial Plotter"));
   Serial.println(F("  d  captura 1 s cru (test/host/espectro_emg.py)"));
   Serial.printf("  f  passa-altas 20 Hz / 8 Hz (agora: %.0f Hz)\n", passaAltasHz);
+  Serial.printf("  l  usar / ignorar os pinos LO (agora: %s)\n", usaLo ? "em uso" : "ignorados");
   Serial.println(F("  e  alterna pino RAW / pino SIG (envelope) do MyoWare"));
   Serial.printf("  entrada: %s\n", entradaBruta ? "RAW do MyoWare" : "SIG do MyoWare (envelope)");
   Serial.println(F("  MyoWare: + no 3V3, - no GND, RAW no GPIO 4, chave em ON."));
@@ -192,6 +200,13 @@ static void console() {
         entradaBruta = !entradaBruta;
         reconfigurar = true;
         Serial.printf("  entrada: %s\n", entradaBruta ? "CRUA" : "ENVELOPE");
+        comecaRepouso();
+        break;
+      case 'l':
+      case 'L':
+        usaLo = !usaLo;
+        Serial.printf("  pinos LO (eletrodo solto): %s\n",
+                      usaLo ? "em uso" : "IGNORADOS - a medida pode ser ruido");
         comecaRepouso();
         break;
       case 'f':
@@ -288,6 +303,25 @@ void loop() {
           ultimoAvisoSolto = millis();
           Serial.printf("    ELETRODO SOLTO (%s%s): cole firme, a medida recomeca sozinha\n",
                         (b.solto & 1) ? "LO+ " : "", (b.solto & 2) ? "LO-" : "");
+        }
+        // Mostrar a leitura mesmo sem contato: e olhando a linha que se ve
+        // o contato voltar enquanto se ajusta o eletrodo. O que nao se faz
+        // e gravar esse trecho como repouso.
+        if (!plotter) {
+          const uint16_t ppSolto = b.maximo - b.minimo;
+          lEnv += b.envelope;
+          if (ppSolto > lPP) lPP = ppSolto;
+          lSat += b.saturadas;
+          lMv = b.mv;
+          lSolto |= b.solto;
+          if (++lN >= BLOCOS_POR_LINHA) {
+            imprimeLinha(lEnv / lN, lPP, lMv, 100.0f * lSat / (lN * AMOSTRAS_BLOCO), lSolto);
+            lEnv   = 0;
+            lPP    = 0;
+            lSat   = 0;
+            lN     = 0;
+            lSolto = 0;
+          }
         }
         inicioRepouso = millis();
         somaRepouso   = 0;
