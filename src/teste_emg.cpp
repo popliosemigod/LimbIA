@@ -58,8 +58,13 @@ static uint8_t leSolto() {
 
 static QueueHandle_t fila = nullptr;
 static limbia::CadeiaEmg cadeia;
-static volatile bool reconfigurar    = false;
-static bool entradaBruta             = EMG_ENTRADA_BRUTA != 0;
+static volatile bool reconfigurar = false;
+static bool entradaBruta          = EMG_ENTRADA_BRUTA != 0;
+// Passa-altas da cadeia. 20 Hz e o da protese: abaixo disso e artefato de
+// movimento. Mas o AD8232 corta acima de ~40 Hz, e entao 20 Hz deixa uma
+// janela estreita demais - com ele vale medir tambem em 8 Hz, sabendo que
+// parte do que entra e movimento, nao musculo.
+static float passaAltasHz            = EMG_PASSA_ALTAS_HZ;
 static volatile uint32_t descartados = 0;
 
 // Captura crua: 1 s de amostras sem filtro, para ver o espectro no PC
@@ -89,6 +94,7 @@ static void tarefa(void*) {
     if (reconfigurar) {
       limbia::ParametrosCadeia p = parametrosCadeia();
       p.entradaBruta             = entradaBruta;
+      p.passaAltasHz             = passaAltasHz;
       limbia::cadeiaConfigura(&cadeia, p);
       reconfigurar = false;
     }
@@ -149,6 +155,7 @@ static void ajuda() {
   Serial.println(F("  r  medir o repouso de novo   z  zera o pico"));
   Serial.println(F("  v  alterna texto / Serial Plotter"));
   Serial.println(F("  d  captura 1 s cru (test/host/espectro_emg.py)"));
+  Serial.printf("  f  passa-altas 20 Hz / 8 Hz (agora: %.0f Hz)\n", passaAltasHz);
   Serial.println(F("  e  alterna pino RAW / pino SIG (envelope) do MyoWare"));
   Serial.printf("  entrada: %s\n", entradaBruta ? "RAW do MyoWare" : "SIG do MyoWare (envelope)");
   Serial.println(F("  MyoWare: + no 3V3, - no GND, RAW no GPIO 4, chave em ON."));
@@ -185,6 +192,14 @@ static void console() {
         entradaBruta = !entradaBruta;
         reconfigurar = true;
         Serial.printf("  entrada: %s\n", entradaBruta ? "CRUA" : "ENVELOPE");
+        comecaRepouso();
+        break;
+      case 'f':
+      case 'F':
+        passaAltasHz = passaAltasHz > 10.0f ? 8.0f : EMG_PASSA_ALTAS_HZ;
+        reconfigurar = true;
+        Serial.printf("  passa-altas: %.0f Hz%s\n", passaAltasHz,
+                      passaAltasHz < 10.0f ? " (entra movimento junto)" : "");
         comecaRepouso();
         break;
       case 'd':
@@ -240,6 +255,7 @@ void setup() {
 
   limbia::ParametrosCadeia p = parametrosCadeia();
   p.entradaBruta             = entradaBruta;
+  p.passaAltasHz             = passaAltasHz;
   limbia::cadeiaConfigura(&cadeia, p);
 
   fila = xQueueCreate(16, sizeof(Bloco));
