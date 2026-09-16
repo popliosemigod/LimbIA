@@ -19,7 +19,11 @@
 //            d  captura 1 s cru (test/host/espectro_emg.py)
 //            z  zera o pico                 ?  ajuda
 //
-//  Sensor: MyoWare AT-04-001. + no 3V3, - no GND, RAW no GPIO 4.
+//  Sensores aceitos:
+//    MyoWare AT-04-001 - + no 3V3, - no GND, RAW no GPIO 4.
+//    AD8232            - 3.3V (NUNCA 5 V: maximo absoluto 3,6 V), GND,
+//                        OUTPUT no GPIO 4, LO+ no 5 e LO- no 6. Os dois
+//                        LO sao deteccao de eletrodo solto em hardware.
 // =====================================================================
 #include <Arduino.h>
 
@@ -38,8 +42,19 @@ struct Bloco {
   uint16_t minimo;  // do sinal cru, para o pico-a-pico
   uint16_t maximo;
   uint16_t saturadas;
-  uint16_t mv;  // nivel DC do pino, uma leitura calibrada por bloco
+  uint16_t mv;    // nivel DC do pino, uma leitura calibrada por bloco
+  uint8_t solto;  // bit 0: LO+ alto, bit 1: LO- alto (so AD8232)
 };
+
+// Eletrodo solto pelo proprio chip (AD8232, pinos LOD+ e LOD-). Com
+// MyoWare os pinos ficam em nivel baixo e isto nunca acusa - por isso
+// nao atrapalha os dois sensores.
+static uint8_t leSolto() {
+  uint8_t s = 0;
+  if (digitalRead(PIN_LO_MAIS)) s |= 1;
+  if (digitalRead(PIN_LO_MENOS)) s |= 2;
+  return s;
+}
 
 static QueueHandle_t fila = nullptr;
 static limbia::CadeiaEmg cadeia;
@@ -94,6 +109,7 @@ static void tarefa(void*) {
     if (++n >= AMOSTRAS_BLOCO) {
       b.envelope = soma / n;
       b.mv       = analogReadMilliVolts(PIN_EMG_TESTE);
+      b.solto    = leSolto();
       if (xQueueSend(fila, &b, 0) != pdTRUE) descartados++;
       soma        = 0;
       n           = 0;
@@ -107,14 +123,15 @@ static void tarefa(void*) {
 // ---------------------------------------------------------------------
 //  Estado do console
 // ---------------------------------------------------------------------
-static bool plotter           = false;
-static bool medindoRepouso    = true;
-static uint32_t inicioRepouso = 0;
-static uint32_t ultimoAviso   = 0;
-static float somaRepouso      = 0;
-static uint32_t nRepouso      = 0;
-static float repouso          = 0;
-static float pico             = 0;
+static bool plotter              = false;
+static bool medindoRepouso       = true;
+static uint32_t inicioRepouso    = 0;
+static uint32_t ultimoAviso      = 0;
+static uint32_t ultimoAvisoSolto = 0;
+static float somaRepouso         = 0;
+static uint32_t nRepouso         = 0;
+static float repouso             = 0;
+static float pico                = 0;
 // Saturacao desde o ultimo resumo: com o sinal batendo no trilho, o
 // envelope mede o recorte, nao o musculo, e a razao nao vale nada.
 static uint32_t satResumo      = 0;
@@ -123,7 +140,8 @@ static uint32_t amostrasResumo = 0;
 // acumulado da linha de texto
 static float lEnv   = 0;
 static uint16_t lPP = 0, lSat = 0, lMv = 0;
-static uint8_t lN = 0;
+static uint8_t lSolto = 0;
+static uint8_t lN     = 0;
 
 static void ajuda() {
   Serial.println();
@@ -134,6 +152,8 @@ static void ajuda() {
   Serial.println(F("  e  alterna pino RAW / pino SIG (envelope) do MyoWare"));
   Serial.printf("  entrada: %s\n", entradaBruta ? "RAW do MyoWare" : "SIG do MyoWare (envelope)");
   Serial.println(F("  MyoWare: + no 3V3, - no GND, RAW no GPIO 4, chave em ON."));
+  Serial.println(F("  AD8232: 3.3V (NUNCA 5 V), GND, OUTPUT no GPIO 4,"));
+  Serial.println(F("          LO+ no GPIO 5 e LO- no GPIO 6 (eletrodo solto)."));
   Serial.println(F("  Notebook na BATERIA com o eletrodo na pele."));
   Serial.println(F("========================================================="));
 }
@@ -183,7 +203,7 @@ static void console() {
 // A barra e logaritmica: 1x = vazia, RAZAO_TOPO_BARRA = cheia. Musculo
 // vai de 3x a 30x do repouso, e numa escala linear tudo abaixo de 10x
 // pareceria parado.
-static void imprimeLinha(float env, uint16_t pp, uint16_t mv, float satPct) {
+static void imprimeLinha(float env, uint16_t pp, uint16_t mv, float satPct, uint8_t solto) {
   // Sinal no trilho: o envelope mede o recorte. Nunca chamar isso de musculo.
   const bool saturou = satPct > QUAL_SATURACAO * 100.0f;
   const float razao  = repouso > 0.5f ? env / repouso : 0;
@@ -199,6 +219,9 @@ static void imprimeLinha(float env, uint16_t pp, uint16_t mv, float satPct) {
   Serial.printf("env %5.0f  %5.1fx [%s] %s pp %4u  dc %4u mV", env, razao, barra,
                 razao >= QUAL_RAZAO_OK && !saturou ? "MUSCULO" : "       ", pp, mv);
   if (saturou) Serial.printf("  SATURANDO %.0f%%", satPct);
+  if (solto) {
+    Serial.printf("  ELETRODO SOLTO (%s%s)", (solto & 1) ? "LO+ " : "", (solto & 2) ? "LO-" : "");
+  }
   if (mv < 300 || mv > 2400) Serial.print(F("  DC fora do meio"));
   Serial.println();
 }
@@ -211,6 +234,9 @@ void setup() {
 
   analogReadResolution(12);
   analogSetPinAttenuation(PIN_EMG_TESTE, ADC_11db);
+  // Pull-down: sensor sem esses pinos (MyoWare) le "colado" e nao alarma.
+  pinMode(PIN_LO_MAIS, INPUT_PULLDOWN);
+  pinMode(PIN_LO_MENOS, INPUT_PULLDOWN);
 
   limbia::ParametrosCadeia p = parametrosCadeia();
   p.entradaBruta             = entradaBruta;
@@ -239,6 +265,20 @@ void loop() {
   Bloco b;
   while (xQueueReceive(fila, &b, 0) == pdTRUE) {
     if (medindoRepouso) {
+      // Eletrodo solto durante o repouso invalida a medida inteira: em vez
+      // de gravar um repouso que e ruido, espera o contato voltar.
+      if (b.solto) {
+        if (millis() - ultimoAvisoSolto > 2000) {
+          ultimoAvisoSolto = millis();
+          Serial.printf("    ELETRODO SOLTO (%s%s): cole firme, a medida recomeca sozinha\n",
+                        (b.solto & 1) ? "LO+ " : "", (b.solto & 2) ? "LO-" : "");
+        }
+        inicioRepouso = millis();
+        somaRepouso   = 0;
+        nRepouso      = 0;
+        ultimoAviso   = 0;
+        continue;
+      }
       // O primeiro meio segundo e o filtro assentando: fica de fora.
       const uint32_t decorrido = millis() - inicioRepouso;
       if (decorrido > 500) {
@@ -276,12 +316,14 @@ void loop() {
     if (pp > lPP) lPP = pp;
     lSat += b.saturadas;
     lMv = b.mv;
+    lSolto |= b.solto;
     if (++lN >= BLOCOS_POR_LINHA) {
-      imprimeLinha(lEnv / lN, lPP, lMv, 100.0f * lSat / (lN * AMOSTRAS_BLOCO));
-      lEnv = 0;
-      lPP  = 0;
-      lSat = 0;
-      lN   = 0;
+      imprimeLinha(lEnv / lN, lPP, lMv, 100.0f * lSat / (lN * AMOSTRAS_BLOCO), lSolto);
+      lEnv   = 0;
+      lPP    = 0;
+      lSat   = 0;
+      lN     = 0;
+      lSolto = 0;
     }
   }
 

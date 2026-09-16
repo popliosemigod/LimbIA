@@ -174,6 +174,24 @@ O RAW foi o escolhido porque o filtro fica sob nosso controle, e a amostragem de
 - **Posição:** meio do ventre muscular, alinhado com as fibras; referência sobre
   osso. Fora do meio do músculo, o manual mostra o sinal caindo a uma fração.
 
+### O AD8232, o segundo sensor da bancada
+
+Módulo de ECG, três eletrodos (RA, LA e RL como referência). Ele **não foi feito
+para EMG**, e é importante saber o que isso custa e o que ganha:
+
+| | |
+| --- | --- |
+| Alimentação | **3,3 V, nunca 5 V** — o máximo absoluto do chip é 3,6 V |
+| Saída `OUTPUT` | centrada em REFOUT (~1,65 V), como o RAW do MyoWare |
+| Ganho | 1100 no módulo comum, contra ~200 do MyoWare |
+| Banda | ~0,5 a 40 Hz no módulo comum — **corta a maior parte do EMG**, que vive de 20 a 450 Hz |
+| `LO+` / `LO−` | **detecção de eletrodo solto em hardware**: nível alto = eletrodo descolado |
+
+A banda estreita é a limitação séria: sobra a faixa de 20 a 40 Hz, então espera-se
+razão contração/repouso **menor** que a do MyoWare. Em compensação, o corte em
+40 Hz já derruba a rede de 60 Hz, e os pinos `LO` respondem sozinhos a pergunta
+que mais atrapalhou os primeiros ensaios — se o eletrodo descolou.
+
 ## O que foi medido, e onde
 
 Autoteste, seções [6] a [11], rodando **na placa**:

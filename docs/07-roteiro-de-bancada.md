@@ -153,6 +153,13 @@ autoteste vieram de casos que eu mesmo gerei.
 
 Chave da placa em **ON**. Ganho no trimpot de fábrica até o sinal funcionar.
 
+**Alternativa: AD8232** (ver [docs/05](05-emg-e-a-ia.md)). `3.3V` (**nunca 5 V**),
+`GND`, `OUTPUT` no ADC, e `LO+`/`LO−` em dois GPIO — são a detecção de eletrodo
+solto em hardware, e o firmware do `emg_teste` já os lê. A banda do módulo
+(~0,5 a 40 Hz) corta a maior parte do EMG, então a razão medida com ele **não
+serve** para calibrar `QUAL_RAZAO_OK`: vale como prova de que a cadeia responde
+ao músculo.
+
 **Montagem**, conforme o manual:
 
 1. pele limpa com sabão;
