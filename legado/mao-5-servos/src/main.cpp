@@ -7,8 +7,11 @@
 //  serial, no formato que o cvzone manda - e isso que deixa a visao
 //  computacional plugar depois sem mudar este codigo.
 //
+//  Ao ligar, a mao nasce FECHADA: no nosso mecanismo o dedo sai do
+//  fechado para o aberto com mais facilidade do que o contrario.
+//
 //  Botao:   toque curto = proximo gesto
-//           segurar 1 s = mao aberta (volta ao comeco da lista)
+//           segurar 1 s = mao fechada (volta ao comeco da lista)
 //
 //  Serial (9600):
 //    $PIMAM  cinco digitos 0/1, na ordem POLEGAR INDICADOR MEDIO ANELAR
@@ -62,13 +65,14 @@ struct Gesto {
   uint8_t dedos[N_DEDOS];  // polegar, indicador, medio, anelar, minimo
 };
 
+// O numero do gesto e o numero de dedos: 0 = fechada ... 5 = aberta.
 static const Gesto GESTOS[] = {
-    {"mao aberta", {1, 1, 1, 1, 1}},
+    {"mao fechada", {0, 0, 0, 0, 0}},
     {"numero 1", {0, 1, 0, 0, 0}},
     {"numero 2 (paz)", {0, 1, 1, 0, 0}},
     {"numero 3", {0, 1, 1, 1, 0}},
     {"numero 4", {0, 1, 1, 1, 1}},
-    {"mao fechada", {0, 0, 0, 0, 0}},
+    {"mao aberta (5)", {1, 1, 1, 1, 1}},
     {"joinha", {1, 0, 0, 0, 0}},
     {"rock", {0, 1, 0, 0, 1}},
     {"hang loose", {1, 0, 0, 0, 1}},
@@ -206,11 +210,11 @@ void setup() {
   Serial.begin(9600);
   pinMode(PINO_BOTAO, INPUT_PULLUP);
 
-  // write() antes de attach(): o primeiro pulso ja sai na posicao aberta,
-  // em vez de o servo saltar para o meio (90 graus) ao ligar.
+  // Nasce FECHADA. write() antes de attach(): o primeiro pulso ja sai na
+  // posicao fechada, em vez de o servo saltar para o meio (90 graus).
   for (uint8_t i = 0; i < N_DEDOS; i++) {
-    angulo[i] = ABERTO[i];
-    alvo[i]   = ABERTO[i];
+    angulo[i] = FECHADO[i];
+    alvo[i]   = FECHADO[i];
     servo[i].write(angulo[i]);
     servo[i].attach(PINO_SERVO[i]);
   }

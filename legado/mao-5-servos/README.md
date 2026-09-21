@@ -33,24 +33,27 @@ pio device monitor
 
 ## Usar
 
+A mão **liga fechada**: no nosso mecanismo o dedo sai do fechado para o aberto
+com mais facilidade do que o contrário.
+
 - **Toque curto no botão:** próximo gesto.
-- **Segurar 1 s:** mão aberta.
+- **Segurar 1 s:** mão fechada (volta ao começo).
 - **Pelo monitor serial:** `0` a `9` escolhem o gesto, `n` avança, `?` lista.
 
 | # | Gesto | Polegar · Indicador · Médio · Anelar · Mínimo |
 | --- | --- | --- |
-| 0 | mão aberta | 1 1 1 1 1 |
+| 0 | mão fechada | 0 0 0 0 0 |
 | 1 | número 1 | 0 1 0 0 0 |
 | 2 | número 2 (paz) | 0 1 1 0 0 |
 | 3 | número 3 | 0 1 1 1 0 |
 | 4 | número 4 | 0 1 1 1 1 |
-| 5 | mão fechada | 0 0 0 0 0 |
+| 5 | mão aberta | 1 1 1 1 1 |
 | 6 | joinha | 1 0 0 0 0 |
 | 7 | rock | 0 1 0 0 1 |
 | 8 | hang loose | 1 0 0 0 1 |
 | 9 | arminha | 1 1 0 0 0 |
 
-`1` = dedo levantado.
+`1` = dedo levantado. De 0 a 5, o número do gesto é o número de dedos levantados.
 
 ## Calibrar
 
