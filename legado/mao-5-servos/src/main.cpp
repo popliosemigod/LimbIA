@@ -47,12 +47,15 @@ static const char* const NOME_DEDO[N_DEDOS] = {"polegar", "indicador", "medio", 
 //  Servo montado ao contrario? Troque os dois valores daquele dedo.
 //  Dedo que nao abre ou nao fecha inteiro? Ajuste ate encostar SEM forcar
 //  - servo parado contra o batente esquenta e queima.
+//
+//  Curso reduzido a METADE (0 a 90 graus) enquanto a mecanica nao esta
+//  calibrada: melhor o dedo andar de menos do que forcar o batente.
 // ---------------------------------------------------------------------
 static const uint8_t ABERTO[N_DEDOS]  = {0, 0, 0, 0, 0};
-static const uint8_t FECHADO[N_DEDOS] = {180, 180, 180, 180, 180};
+static const uint8_t FECHADO[N_DEDOS] = {90, 90, 90, 90, 90};
 
 static const uint8_t VELOCIDADE_GRAUS = 3;   // graus por passo
-static const uint16_t PASSO_MS        = 15;  // ~180 graus em 0,9 s
+static const uint16_t PASSO_MS        = 15;  // ~90 graus em 0,45 s
 static const uint16_t DEBOUNCE_MS     = 30;
 static const uint16_t SEGURAR_MS      = 1000;
 
