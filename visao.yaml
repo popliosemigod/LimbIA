@@ -1,0 +1,30 @@
+# Declaração de visão do LimbIA — LAB_PROMPT_visao.md, passo 2.
+#
+# Módulo compartilhado do laboratório em Jaspy/visao/ (repositório
+# separado — "um repositório por projeto", CLAUDE.md do laboratório).
+#
+# Este projeto não estava no escopo original do LAB_PROMPT_visao.md ("hoje
+# são o Jaspy e o FarmIO") e é o mais incerto dos declarados até agora:
+# não há placa de câmera escolhida, nenhum fio, nenhum protótipo — só um
+# objetivo escrito (herança do INOVAWEEK, docs/01-heranca-inovaweek-e-lad.md)
+# que continua em aberto. Declarado mesmo assim para não ficar invisível ao
+# `descobrir.py`, com o status mais honesto que existe: "aberto", não
+# "planejado" (planejado, no Jaspy, já tem placa escolhida — aqui nem isso).
+
+projeto: limbia
+perfil: a_decidir  # provavelmente "rapido" (reage ao objeto para ajustar a preensão), não decidido
+
+capacidades:
+  - nome: reconhecimento_de_objeto_para_preensao
+    onde: "a decidir — nenhuma placa de câmera escolhida"
+    status: aberto  # objetivo do INOVAWEEK (Make.sense.AI), nunca iniciado
+    referencia: docs/01-heranca-inovaweek-e-lad.md
+    aviso: >
+      A propriocepção (docs/04-propriocepcao.md, classificador de forma via
+      corrente nos dedos, 97,9%-86% medido) já resolve parte do problema sem
+      câmera nenhuma — "sabe a forma do que segura, não sabe o que é" — e
+      tem a vantagem de funcionar no escuro e com a câmera suja. Visão e
+      propriocepção são complementares, não uma substituindo a outra.
+
+pasta_de_fotos_de_teste: ainda_nao_existe
+roteiro: "não aplicável ainda — sem hardware de câmera para testar"
