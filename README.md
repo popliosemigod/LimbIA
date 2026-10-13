@@ -1,3 +1,5 @@
+> **Em pausa** — o desenvolvimento continua no Jaspy; a mão volta mais tarde como as mãos dele. O estado daqui está congelado na tag `pausa-2026-10`.
+
 # LimbIA
 
 Prótese de mão movida por **EMG**, sobre o hardware do LAD Robotic Hand V3.0.
