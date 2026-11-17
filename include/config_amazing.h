@@ -76,8 +76,11 @@ static const DedoConfig AMZ_DEDOS[AMZ_N_DEDOS] = {
 // Velocidade de cada servo, em graus de curso por segundo (vale para a
 // mao inteira e para o servo comandado sozinho). O demo
 // oficial fecha mais devagar do que abre (CloseSpeed < MaxSpeed).
-#define AMZ_VEL_FECHA_GRAUS_S 90.0f
-#define AMZ_VEL_ABRE_GRAUS_S  180.0f
+#define AMZ_VEL_FECHA_GRAUS_S  90.0f
+#define AMZ_VEL_ABRE_GRAUS_S   180.0f
+// Movimento MANUAL (pagina e console): vale sempre, travado ou nao, e por
+// isso devagar - quem move esta olhando a mao (decisao de 17/11).
+#define AMZ_VEL_MANUAL_GRAUS_S 30.0f
 
 // AUTO-HOME = MAO ABERTA (decidido em 17/11): flexao 0, os dois servos de
 // cada dedo no centro. E a pose de montagem do Amazing Hand e a segura:

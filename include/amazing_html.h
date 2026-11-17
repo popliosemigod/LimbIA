@@ -79,25 +79,27 @@ button:disabled{opacity:.45;cursor:not-allowed}
   <div class="botoes" style="justify-content:center">
     <button class="prim" id="bcal" onclick="calibrar()">Iniciar calibra&ccedil;&atilde;o</button>
     <button id="bcanc" onclick="cmd('cancelar')">Cancelar</button></div>
-  <div class="fraco" style="margin-top:10px">A m&atilde;o s&oacute; se move depois de calibrar. Siga a tela:
+  <div class="fraco" style="margin-top:10px">O <b>m&uacute;sculo</b> s&oacute; comanda a m&atilde;o depois de calibrar (o controle manual, abaixo, vale sempre). Siga a tela:
     relaxe, depois contraia e relaxe quantas vezes ela pedir, at&eacute; 3 contra&ccedil;&otilde;es boas seguidas.
     Em seguida vem a <b>prova</b>: mais 3, que ela precisa reconhecer todas, sem nenhum disparo com o bra&ccedil;o relaxado.</div>
   <div id="res" class="fraco" style="margin-top:8px"></div>
 </div>
 
 <div class="cartao">
-  <h2>M&atilde;o</h2>
+  <h2>M&atilde;o (manual)</h2>
   <div class="botoes">
     <button class="mov" onclick="cmd('abrir')">Abrir m&atilde;o</button>
     <button class="mov" onclick="cmd('fechar')">Fechar m&atilde;o</button>
     <button class="mov prim" onclick="cmd('home')">Auto-home</button></div>
-  <div class="fraco" style="margin-top:8px">Auto-home = m&atilde;o aberta, todos os servos no centro.
-    Pelo m&uacute;sculo: contraiu uma vez fecha, contraiu de novo abre.</div>
+  <div class="fraco" style="margin-top:8px"><b>Controle manual: funciona sempre</b>, mesmo antes de calibrar,
+    e <b>devagar</b> (30&deg;/s). Auto-home = m&atilde;o aberta, todos os servos no centro.
+    Servo solto acorda na casa e anda devagar at&eacute; o pedido.
+    Pelo m&uacute;sculo (s&oacute; calibrado): contraiu uma vez fecha, contraiu de novo abre.</div>
 </div>
 
 <div class="cartao">
   <h2>Servos, um a um</h2>
-  <div class="fraco" style="margin-bottom:8px">0 = casa (m&atilde;o aberta). Subir fecha o dedo.
+  <div class="fraco" style="margin-bottom:8px">Funciona sempre, devagar. 0 = casa (m&atilde;o aberta). Subir fecha o dedo.
     Cada dedo tem dois servos (A e B) que giram em sentidos opostos.</div>
   <div class="servos" id="servos"></div>
 </div>
@@ -115,7 +117,7 @@ const N=500,DT=10,NOMES=['Indicador A','Indicador B','M&eacute;dio A','M&eacute;
 let seq=-1,pts=[],st={},gravando=false,grav=[],falhas=0,mexeu=[0,0,0,0,0,0,0,0],envio={};
 const $=id=>document.getElementById(id),cv=$('g'),cx=cv.getContext('2d');
 function cor(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
-function calibrar(){if(!st.lib||confirm('Recalibrar trava a mao ate a nova calibracao ser aprovada. Continuar?'))cmd('calibrar')}
+function calibrar(){if(!st.lib||confirm('Recalibrar trava o comando pelo musculo ate a nova calibracao ser aprovada. O manual continua. Continuar?'))cmd('calibrar')}
 function cmd(c,extra){fetch('/cmd?c='+c+(extra||'')).then(r=>r.text()).then(t=>{$('ultimo').textContent=t})}
 let h='';for(let i=0;i<8;i++)h+='<div class="sv"><label><span>'+NOMES[i]+' &middot; canal '+i+'</span><b id="v'+i+'">0&deg;</b></label>'+
  '<input type="range" id="s'+i+'" min="0" max="90" step="1" value="0"></div>';
@@ -136,12 +138,12 @@ function bolas(n,m){let s='';for(let i=0;i<m;i++)s+=i<n?'&#9679;':'&#9675;';retu
 function atualiza(j){
  st=j;const k=j.cal||{},em=['preparo','repouso','contraia','relaxe','prova_contraia','prova_relaxe'].includes(k.e);
  $('trava').className='cartao '+(j.lib?'liberada':'travada');
- $('travatxt').innerHTML=j.lib?'&#10003; M&Atilde;O LIBERADA':(em?'&#128274; M&Atilde;O TRAVADA &mdash; calibrando...':'&#128274; M&Atilde;O TRAVADA &mdash; calibre para liberar');
+ $('travatxt').innerHTML=j.lib?'&#10003; M&Uacute;SCULO LIBERADO':(em?'&#128274; M&Uacute;SCULO TRAVADO &mdash; calibrando...':'&#128274; M&Uacute;SCULO TRAVADO &mdash; calibre para liberar');
  $('btrava').style.display=(j.lib||em)?'none':'';
  $('lamp').className=j.con?'on':'';$('lamp').innerHTML=j.con?'CONTRA&Ccedil;&Atilde;O':(j.lib||em?'repouso':'calibre<br>primeiro');
  $('nc').textContent=j.ncon;
  $('ent').innerHTML='MyoWare '+(j.det?'detectando...':(j.raw?'RAW':'SIG/ENV'))+(j.sat?' <span class="ruim">SATURADO</span>':'')+
-  ' &middot; servos '+(j.pca?(j.pul?'com pulso':'soltos (sem pulso)'):'<span class="ruim">sem PCA9685</span>');
+  ' &middot; servos '+(j.pca?(j.pul?'com pulso: '+(j.pul.toString(2).split('1').length-1)+' de 8':'soltos (sem pulso)'):'<span class="ruim">sem PCA9685</span>');
  if(j.ev)$('ultimo').textContent=j.ev;
  let t=INSTR[k.e]||'';if(em&&k.r)t+=' &middot; '+Math.ceil(k.r/1000)+' s';
  $('instr').innerHTML=t||'&nbsp;';$('instr').className=/contraia/.test(k.e)?'contraia':(/relaxe|repouso/.test(k.e)?'relaxe':'');
@@ -153,9 +155,9 @@ function atualiza(j){
  if(j.res){const r=j.res;$('res').innerHTML='repouso '+r.rep.toFixed(1)+' &plusmn; '+r.dsv.toFixed(1)+
   ' &middot; contra&ccedil;&atilde;o '+r.con.toFixed(1)+' &middot; disparo '+r.liga.toFixed(1)+' &middot; solta '+r.desl.toFixed(1)+
   ' &middot; prova '+r.ac+' reconhecidas, '+r.fa+' falsas'+(k.e=='falhou'?'<br><span class="ruim">Recusada: '+k.m+'. A m&atilde;o continua travada.</span>':'')}
- document.querySelectorAll('.mov').forEach(b=>b.disabled=!j.lib||!j.pca);
- for(let i=0;i<8;i++){const s=$('s'+i);s.max=j.lim;s.disabled=!j.lib||!j.pca||!j.svl[i];
-  if(Date.now()-mexeu[i]>1500){s.value=j.sv[i];$('v'+i).innerHTML=j.sv[i]+'&deg;'}}
+ document.querySelectorAll('.mov').forEach(b=>b.disabled=!j.pca);
+ for(let i=0;i<8;i++){const s=$('s'+i);s.max=j.lim;s.disabled=!j.pca||!j.svl[i];
+  if(Date.now()-mexeu[i]>1500){s.value=j.sv[i];$('v'+i).innerHTML=(j.pul>>i&1)?j.sv[i]+'&deg;':'solto'}}
  const p0=j.s-j.p.length;
  j.p.forEach((p,i)=>{pts.push({e:p[1]/10,c:p[2]&1});
   if(gravando)grav.push([(p0+i)*DT,p[0],(p[1]/10).toFixed(1),j.liga.toFixed(1),j.desl.toFixed(1),p[2]&1,(p[2]>>1)&1,(p[2]>>2)&1])});

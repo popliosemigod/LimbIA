@@ -474,6 +474,50 @@ rede.** O PCA9685 continua sem responder.
 
 ---
 
+### 2026-11-17 (2) — A trava passa a valer só para o músculo
+
+**Alvo:** o desenvolvedor move os dedos pela página em qualquer condição, mesmo
+antes de calibrar. O que não pode, ao ligar, é os servos seguirem o sensor de
+EMG.
+
+**Previsão:** sem mudança no autoteste, que não toca nos servos. Na placa, o
+movimento manual deixa de ser recusado por "TRAVADA" e só depende do PCA9685.
+
+**O que foi feito:**
+
+- A trava ficou só no caminho do músculo: o EMG só comanda depois da
+  calibração aprovada.
+- Manual (página e console: servos um a um, abrir, fechar, auto-home) vale
+  sempre, a **30°/s** (`AMZ_VEL_MANUAL_GRAUS_S`).
+- Pulso controlado **servo a servo**: no boot todos ficam soltos. O servo
+  tocado pela primeira vez acorda na casa e anda devagar até o pedido; só ele
+  acorda.
+- Saturação congela só o que o músculo pediu.
+- A página mostra "MÚSCULO TRAVADO/LIBERADO", os sliders ativos sempre e
+  "solto" nos servos sem pulso.
+
+**Medido (C3, COM5):**
+
+- Compila.
+- No boot, os 8 servos aparecem "sem pulso (solto)" e o músculo "TRAVADO".
+- `servo 0 30`, `fecha` e `home` agora respondem "PCA9685 ausente" (antes:
+  "TRAVADA"). O PCA continua sem responder, então **nenhum servo se moveu**.
+- A página foi verificada no Edge headless no estado "músculo travado, 2
+  servos movidos à mão".
+- Nesta ligação, o MyoWare voltou a ser detectado como **SIG/ENV**, depois de
+  ter sido RAW na ligação anterior.
+
+**Divergência:** nenhuma. A troca SIG ↔ RAW entre duas ligações seguidas, sem
+mexer no firmware, sugere mau contato no fio do GPIO3.
+
+**Decisão:** a calibração protege contra o **músculo** mover a mão por conta
+própria; o desenvolvedor move devagar quando quiser. O preço: pela rede
+aberta, qualquer pessoa no alcance também move a mão devagar, sem calibrar.
+
+**Evidência:** log do console e screenshot no scratchpad da sessão.
+
+---
+
 ### Próxima entrada esperada — Ensaio 1: um dedo, um motor
 
 **Alvo previsto:** montar um dedo com um motor DC no L293D e um ACS712 em série,

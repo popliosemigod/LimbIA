@@ -100,8 +100,8 @@ travado puxa ~700 mA, e oito passam de 5 A. O 3V3 do C3 não alimenta nem um.
 **Nunca ligar o V+ no 3V3 nem no 5V da USB do C3.**
 
 O pino **OE** do PCA9685 fica sem ligar: a placa já o puxa para habilitar as
-saídas. Quem garante que nada se move antes da calibração é o firmware, com as
-saídas em "full off".
+saídas. Quem garante que nada se move no boot é o firmware, com as saídas em
+"full off".
 
 **A e B:** o servo A do dedo recebe o ângulo que soma e o B o que subtrai (a
 regra do Amazing Hand, acima). Se um dedo **estender** quando deveria fletir, o
@@ -120,7 +120,7 @@ Pedido do Henrique: começar em 0 e ir no **máximo a 90**.
 
 ## Comando pelo EMG: alternado
 
-Decidido em 13/11/2026, e só com a mão **liberada** (ver a trava, abaixo):
+Decidido em 13/11/2026, e só com o músculo **liberado** (ver a trava, abaixo):
 **contraiu uma vez, a mão fecha; contraiu de novo, abre.** A mão não precisa de contração sustentada para ficar fechada.
 
 Só a **subida** da contração troca o estado. Segurar a contração por 4 s
@@ -174,17 +174,29 @@ repouso medido em 12/11 teve desvio < 1, longe disso.
 
 Medido no autoteste [13], no C3: ver a entrada do diário de 13/11.
 
-## A trava: nada se move sem calibração (17/11/2026)
+## A trava: o músculo só comanda depois da calibração (17/11/2026)
 
-**A prótese liga TRAVADA.** O PCA9685 nasce com as 16 saídas em "full off":
-nenhum servo recebe pulso, então todos ficam soltos e parados. O PCA guarda
-os registradores quando só o ESP reinicia, por isso o firmware força o "full
-off" a cada boot. Sem isso, um reset no meio do uso deixaria os servos
-segurando a última pose.
+Decisão revista no mesmo dia: a trava vale para o **comando pelo músculo**, e
+não para o desenvolvedor.
 
-A calibração é exigida **a cada vez que liga**, porque o eletrodo nunca volta
-exatamente ao mesmo lugar. Só ela destrava. Recalibrar, ou trocar a saída do
-MyoWare (`raw`/`env`), trava de novo.
+- **No boot nada se move.** O PCA9685 nasce com as 16 saídas em "full off":
+  nenhum servo recebe pulso, todos ficam soltos e parados, e o EMG não comanda
+  nada. O PCA guarda os registradores quando só o ESP reinicia, por isso o
+  firmware força o "full off" a cada boot. Sem isso, um reset no meio do uso
+  deixaria os servos segurando a última pose.
+- **O músculo só comanda depois da calibração aprovada**, exigida a cada vez
+  que a mão liga, porque o eletrodo nunca volta exatamente ao mesmo lugar.
+  Recalibrar, ou trocar a saída do MyoWare (`raw`/`env`), trava o músculo de
+  novo.
+- **O controle manual vale sempre**, travado ou não: os servos um a um, abrir,
+  fechar e auto-home, pela página ou pelo console. Ele anda **devagar**
+  (`AMZ_VEL_MANUAL_GRAUS_S`, 30°/s, contra 90–180°/s do músculo), porque quem
+  move está olhando a mão. Só precisa do PCA9685 respondendo.
+- **Servo solto acorda na casa.** Um servo sem pulso não tem posição
+  conhecida. Ao receber o primeiro comando, ele vai **direto para a casa**
+  (curso 0), na velocidade própria do servo, e de lá anda devagar até o que foi
+  pedido. Só o servo pedido acorda; os outros continuam soltos.
+- **Entrada RAW saturada** congela o que o músculo pediu; o manual segue.
 
 ### A calibração, que insiste até ter certeza
 
@@ -220,13 +232,8 @@ pose de montagem do Amazing Hand, e a segura:
 - não aperta objeto;
 - cada servo fica com curso para os dois lados.
 
-O auto-home roda **sozinho quando a calibração libera a mão** e também pelo
-botão.
-
-No primeiro auto-home os servos vêm de "sem pulso" e o firmware não sabe onde
-eles estão. Eles vão ao centro **na velocidade própria do servo**, porque não
-há rampa possível sem conhecer a posição de partida. Do segundo movimento em
-diante, tudo anda em rampa.
+O auto-home roda **sozinho quando a calibração libera o músculo**, na
+velocidade normal, e também pelo botão, devagar como todo comando manual.
 
 ## Servos um a um
 
@@ -252,8 +259,8 @@ Não depende de roteador, de nuvem nem de aplicativo.
 
 **O que tem nela, de cima para baixo:**
 
-- **Faixa da trava:** vermelha "MÃO TRAVADA, calibre para liberar", com o botão
-  "Calibrar agora", ou verde "MÃO LIBERADA".
+- **Faixa da trava:** vermelha "MÚSCULO TRAVADO, calibre para liberar", com o
+  botão "Calibrar agora", ou verde "MÚSCULO LIBERADO".
 - **Sinal do músculo:**
   - uma **lâmpada grande** que acende verde, escrito **CONTRAÇÃO**, enquanto
     uma contração está reconhecida;
@@ -264,19 +271,21 @@ Não depende de roteador, de nuvem nem de aplicativo.
   Antes da calibração não há linha de disparo, e a lâmpada diz "calibre
   primeiro".
 - **Calibração:** instrução grande, contagem regressiva, progresso e o resultado.
-  Com a mão liberada, o botão vira "Recalibrar" e pede confirmação, porque
-  recalibrar trava a mão.
-- **Mão:** Abrir mão, Fechar mão, Auto-home.
+  Com o músculo liberado, o botão vira "Recalibrar" e pede confirmação, porque
+  recalibrar trava o músculo de novo (o manual continua).
+- **Mão (manual):** Abrir mão, Fechar mão, Auto-home. Funcionam **sempre**,
+  devagar.
 - **Servos, um a um:** 8 sliders (indicador A/B, médio A/B, anelar A/B,
-  polegar A/B, com o canal de cada um).
+  polegar A/B, com o canal de cada um). Funcionam **sempre**, devagar. Servo
+  que ainda não recebeu pulso aparece como "solto".
 - **Capturar leitura:** Gravar / Baixar CSV, com as colunas
   `t_ms, adc, envelope, disparo, solta, contracao, mao_fechada, liberada`.
 
-Com a mão travada, os botões de movimento e os sliders ficam desligados, e o
-firmware recusa o comando mesmo se ele chegar.
+Os botões e os sliders só ficam desligados quando o PCA9685 não responde.
 
 **O preço da rede aberta:** qualquer pessoa no alcance do Wi-Fi pode abrir a
-página e mover a mão, depois de liberada. Foi pedido assim. Se a mão sair do
+página e mover a mão, devagar, a qualquer momento: o controle manual não passa
+pela trava. Foi pedido assim. Se a mão sair do
 laboratório, isso volta à mesa.
 
 A potência do rádio fica em 8,5 dBm. O C3 SuperMini tem a antena mal casada e
@@ -294,31 +303,29 @@ linhas.
 | Comando | Faz |
 | --- | --- |
 | `?` | estado e ajuda |
-| `cal` / `cancela` | calibração (trava até ser aprovada) |
-| `abre` / `fecha` | mão inteira (só liberada) |
-| `home` | auto-home = mão aberta (só liberada) |
-| `servo <i> <c>` | servo `i` (0–7) no curso `c` (0–limite) (só liberada) |
+| `cal` / `cancela` | calibração (o músculo trava até ser aprovada) |
+| `abre` / `fecha` | mão inteira, devagar (sempre) |
+| `home` | auto-home = mão aberta, devagar (sempre) |
+| `servo <i> <c>` | servo `i` (0–7) no curso `c` (0–limite), devagar (sempre) |
 | `lim <g>` | limite de flexão, 0–90 |
 | `centro <d> <a> <b>` | centro dos servos do dedo `d` |
 | `inv <d>` | inverte o sentido de flexão do dedo `d` |
 | `dedos <máscara>` | quais dedos andam: `1` só indicador, `15` todos |
 | `liga <l> <d>` | ajuste fino do limiar, depois de calibrado |
-| `raw` / `env` / `auto` | tipo de saída do MyoWare (trava de novo) |
+| `raw` / `env` / `auto` | tipo de saída do MyoWare (trava o músculo de novo) |
 | `i2c` | diagnóstico do barramento e nova tentativa no PCA9685 |
 | `t` | liga/desliga as linhas do Serial Plotter |
 
 ## Roteiro sugerido para o primeiro ensaio
 
-1. **Antes de ligar os servos:**
-   - MyoWare na pele;
-   - conecte em `LimbIA-mao` e olhe o gráfico: o repouso precisa estar
-     parado, e uma contração precisa subir bem acima dele;
-   - faça a calibração até ela aprovar.
-2. **Ainda no console, com a mão liberada:** `dedos 1` (só o indicador) e
-   `lim 20`. Na página, suba "Indicador A" e "Indicador B" juntos até 10 e
-   depois 20, e confira se o dedo **fecha**: não pode estender nem torcer.
-3. Suba o limite de 10 em 10 até 90, anotando onde a haste ou o dedo encosta.
-4. Ajuste `centro` até o dedo ficar reto no auto-home. Os valores entram em
+1. **Mecânica primeiro, sem músculo:** `dedos 1` (só o indicador) e `lim 20`
+   no console. Na página, suba "Indicador A" e "Indicador B" juntos até 10 e
+   depois 20 (o manual funciona travado), e confira se o dedo **fecha**: não
+   pode estender nem torcer.
+2. Suba o limite de 10 em 10 até 90, anotando onde a haste ou o dedo encosta.
+3. Ajuste `centro` até o dedo ficar reto no auto-home. Os valores entram em
    `config_amazing.h` num commit `calib`.
-5. `dedos 15` (todos) e só então o comando pelo músculo: contrair fecha,
-   contrair de novo abre.
+4. **Músculo:** MyoWare na pele. Na página, o repouso precisa estar parado no
+   gráfico e uma contração precisa subir bem acima dele. Calibre até aprovar.
+5. `dedos 15` (todos) e o comando pelo músculo: contrair fecha, contrair de
+   novo abre.

@@ -5,12 +5,13 @@
 //
 //  O que faz
 //  ---------
-//  1. Liga TRAVADA: o PCA9685 nasce com as 16 saidas em "full off" - os
-//     servos ficam sem pulso, soltos, e nao se movem.
+//  1. Liga com o PCA9685 nas 16 saidas em "full off": os servos ficam sem
+//     pulso, soltos, e nao se movem. O MUSCULO fica TRAVADO.
 //  2. Descobre se o MyoWare esta na saida RAW ou SIG/ENV pelo nivel medio.
 //  3. Espera a CALIBRACAO (botao na pagina ou `cal`). Ela e adaptativa:
 //     pede contracoes ate ter certeza, e prova o limiar antes de aceitar
-//     (limbia_sinal.h). So depois de aprovada a mao e LIBERADA.
+//     (limbia_sinal.h). So depois de aprovada o MUSCULO comanda a mao.
+//     O controle MANUAL (pagina e console) vale sempre, mas devagar.
 //  4. Liberou: AUTO-HOME (mao aberta: todos os servos no centro).
 //  5. Liberada, COMANDO ALTERNADO: contraiu uma vez, fecha; contraiu de
 //     novo, abre. Pela pagina: abrir, fechar, auto-home e cada um dos 8
@@ -30,15 +31,16 @@
 //  coisas por uma fila de comandos e le o que ela publica. Loop: servos
 //  (I2C), Wi-Fi, console e Serial Plotter.
 //
-//  Modo seguro: travada, PCA9685 ausente ou entrada RAW saturada - nenhum
-//  servo se move.
+//  Modo seguro: no boot nenhum servo se move; o musculo so comanda depois
+//  da calibracao; PCA9685 ausente para tudo; entrada RAW saturada congela
+//  o que o musculo pediu.
 //
 //  Console serial (115200, fim de linha LF):
 //    ?                 ajuda e estado
 //    cal / cancela     calibracao (siga as instrucoes)
-//    abre / fecha      mao inteira (so liberada)
-//    home              auto-home = mao aberta (so liberada)
-//    servo <i> <c>     servo i (0..7) no curso c (0..limite) (so liberada)
+//    abre / fecha      mao inteira, devagar (sempre)
+//    home              auto-home = mao aberta, devagar (sempre)
+//    servo <i> <c>     servo i (0..7) no curso c (0..limite), devagar (sempre)
 //    lim <g>           limite de flexao, 0..90
 //    centro <d> <a> <b>   centro dos dois servos do dedo d (graus abs.)
 //    inv <d>           inverte o sentido de flexao do dedo d
@@ -351,15 +353,23 @@ static void tarefaEmg(void*) {
 //  dedo soma, servo B subtrai (com `sentido` invertendo os dois) - a regra
 //  do Amazing Hand (limbia_paralelo.h). Assim nenhum comando, nem o de um
 //  servo sozinho, estende o dedo alem da casa.
+//
+//  Duas origens de movimento (decisao de 17/11, revista no mesmo dia):
+//   - MUSCULO: so com a calibracao aprovada (a trava). Velocidade normal.
+//   - MANUAL (pagina e console, o desenvolvedor): SEMPRE, travada ou nao,
+//     mas DEVAGAR (AMZ_VEL_MANUAL_GRAUS_S). E um processo controlado: quem
+//     move esta olhando a mao.
+//  No boot ninguem se move: os servos ficam sem pulso ate alguem pedir.
 // =====================================================================
 static Adafruit_PWMServoDriver pca(AMZ_PCA_ENDERECO);
-static bool pcaOk          = false;
-static bool servosComPulso = false;  // false: saidas em full off, servos soltos
+static bool pcaOk       = false;
+static uint8_t comPulso = 0;  // bit s = servo s recebendo pulso; 0 = solto
 static DedoParalelo dedos[AMZ_N_DEDOS];
 static uint8_t mascaraDedos = (1u << AMZ_N_DEDOS) - 1;
 static LimitesParalelo limites;
 static float cursoAtual[N_SERVOS];
 static float cursoAlvo[N_SERVOS];
+static bool alvoManual[N_SERVOS];  // o alvo atual veio do desenvolvedor: anda devagar
 
 static const char* const NOME_SERVO[N_SERVOS] = {"indicador A", "indicador B", "medio A",
                                                  "medio B",     "anelar A",    "anelar B",
@@ -386,6 +396,10 @@ static bool servoAtivo(uint8_t s) {
   return mascaraDedos & (1u << (s / 2));
 }
 
+static bool temPulso(uint8_t s) {
+  return comPulso & (1u << s);
+}
+
 static bool iniciaPca() {
   Wire.beginTransmission(AMZ_PCA_ENDERECO);
   if (Wire.endTransmission() != 0) return false;
@@ -397,34 +411,35 @@ static bool iniciaPca() {
   // O PCA9685 mantem os registradores quando so o ESP reinicia - sem isto
   // um reset no meio do uso deixaria os servos segurando a ultima pose.
   for (uint8_t ch = 0; ch < 16; ch++) pca.setPWM(ch, 0, 4096);
-  servosComPulso = false;
+  comPulso = 0;
   return true;
 }
 
-// Mao inteira: todos os servos ativos no mesmo curso.
-static void mao(float curso) {
-  for (uint8_t s = 0; s < N_SERVOS; s++) cursoAlvo[s] = limita(curso, 0, limites.flexaoMax);
-}
-static void abrir() {
-  mao(0);
-}
-static void fechar() {
-  mao(limites.flexaoMax);
+// Servo solto nao tem posicao conhecida. Ao acordar, recebe a CASA direto
+// (vai ate ela na velocidade dele - nao ha rampa possivel de onde nao se
+// sabe) e, dali, anda em rampa. So o servo pedido acorda.
+static void acorda(uint8_t s) {
+  if (temPulso(s) || !pcaOk) return;
+  cursoAtual[s] = 0;
+  escreveServo(s);
+  comPulso |= (uint8_t)(1u << s);
 }
 
-// Auto-home = mao aberta. Servo que ainda esta sem pulso nao tem posicao
-// conhecida: recebe a casa direto (ele vai a ela na velocidade dele - nao
-// ha como fazer rampa de onde nao se sabe). Com pulso, rampa normal.
-static void autoHome() {
-  abrir();
-  if (!pcaOk) return;
-  if (!servosComPulso) {
-    for (uint8_t s = 0; s < N_SERVOS; s++) {
-      cursoAtual[s] = 0;
-      if (servoAtivo(s)) escreveServo(s);
-    }
-    servosComPulso = true;
-  }
+static void alvo(uint8_t s, float curso, bool manual) {
+  if (!servoAtivo(s)) return;
+  acorda(s);
+  cursoAlvo[s]  = limita(curso, 0, limites.flexaoMax);
+  alvoManual[s] = manual;
+}
+
+// Mao inteira: todos os servos ativos no mesmo curso.
+static void mao(float curso, bool manual) {
+  for (uint8_t s = 0; s < N_SERVOS; s++) alvo(s, curso, manual);
+}
+
+// Auto-home = mao aberta.
+static void autoHome(bool manual) {
+  mao(0, manual);
 }
 
 static void tickServos() {
@@ -434,16 +449,19 @@ static void tickServos() {
   const float dt = (agora - ultimoMs) / 1000.0f;
   ultimoMs       = agora;
 
-  // TRAVADA, PCA9685 ausente, servos ainda sem pulso ou entrada saturada:
-  // ninguem se move. PCA ausente nao tenta de novo sozinho: medido em 12/11,
-  // cada tentativa com o barramento ruim trava o loop por 1 s. Use `i2c`.
-  if (!PUB.liberada || !pcaOk || !servosComPulso || PUB.saturado) return;
+  // PCA ausente nao tenta de novo sozinho: medido em 12/11, cada tentativa
+  // com o barramento ruim trava o loop por 1 s. Use `i2c`.
+  if (!pcaOk) return;
 
   for (uint8_t s = 0; s < N_SERVOS; s++) {
-    if (!servoAtivo(s)) continue;
-    const float alvo = limita(cursoAlvo[s], 0, limites.flexaoMax);
-    const float vel  = alvo > cursoAtual[s] ? AMZ_VEL_FECHA_GRAUS_S : AMZ_VEL_ABRE_GRAUS_S;
-    const float novo = rampa(cursoAtual[s], alvo, vel * dt);
+    if (!servoAtivo(s) || !temPulso(s)) continue;
+    // Entrada saturada congela o que o MUSCULO pediu; o manual segue.
+    if (!alvoManual[s] && PUB.saturado) continue;
+    const float a    = limita(cursoAlvo[s], 0, limites.flexaoMax);
+    const float vel  = alvoManual[s]       ? AMZ_VEL_MANUAL_GRAUS_S
+                       : a > cursoAtual[s] ? AMZ_VEL_FECHA_GRAUS_S
+                                           : AMZ_VEL_ABRE_GRAUS_S;
+    const float novo = rampa(cursoAtual[s], a, vel * dt);
     if (novo != cursoAtual[s]) {
       cursoAtual[s] = novo;
       escreveServo(s);
@@ -451,18 +469,20 @@ static void tickServos() {
   }
 }
 
-// O loop acompanha a tarefa: liberou -> auto-home; o EMG trocou o estado
-// da mao -> abre ou fecha.
+// O loop acompanha a tarefa, e SO com a mao liberada: liberou ->
+// auto-home; o EMG trocou o estado da mao -> abre ou fecha. Travada, o
+// musculo nao move nada.
 static void tickMao() {
   static bool liberadaAntes = false;
   static bool fechadaAntes  = false;
   const bool liberada       = PUB.liberada;
   const bool fechada        = PUB.fechada;
   if (liberada && !liberadaAntes) {
-    autoHome();
-    Serial.println(F(">>> MAO LIBERADA: auto-home (mao aberta)"));
+    autoHome(false);
+    Serial.println(F(">>> MUSCULO LIBERADO: auto-home (mao aberta)"));
   }
-  if (liberada && liberadaAntes && fechada != fechadaAntes) fechada ? fechar() : abrir();
+  if (liberada && liberadaAntes && fechada != fechadaAntes)
+    mao(fechada ? limites.flexaoMax : 0, false);
   liberadaAntes = liberada;
   fechadaAntes  = fechada;
 }
@@ -646,9 +666,9 @@ static void pede(TipoCmd t, float a = 0, float b = 0) {
   xQueueSend(filaCmd, &c, 0);
 }
 
-// Comandos de movimento: devolvem a mensagem para quem pediu.
+// Movimento MANUAL (desenvolvedor) vale sempre, travada ou nao; so precisa
+// do PCA9685. Devolve a mensagem de recusa, ou nullptr.
 static const char* podeMover() {
-  if (!PUB.liberada) return "TRAVADA: faca a calibracao primeiro";
   if (!pcaOk) return "PCA9685 ausente: confira a fiacao e use i2c no console";
   return nullptr;
 }
@@ -675,8 +695,8 @@ static void webDados() {
   ADD("],\"lib\":%d,\"con\":%d,\"mao\":%d,\"liga\":%.1f,\"desl\":%.1f,\"sat\":%d,\"raw\":%d,"
       "\"det\":%d,\"pca\":%d,\"pul\":%d,\"ncon\":%lu,\"rej\":%lu,\"esp\":%lu,\"lim\":%.0f,",
       u.liberada, u.contracao, u.fechada, u.liga, u.desliga, u.saturado, u.raw, u.detectando, pcaOk,
-      servosComPulso, (unsigned long)u.contracoes, (unsigned long)u.rejeitadas,
-      (unsigned long)u.espigoes, limites.flexaoMax);
+      comPulso, (unsigned long)u.contracoes, (unsigned long)u.rejeitadas, (unsigned long)u.espigoes,
+      limites.flexaoMax);
   ADD("\"sv\":[");
   for (uint8_t i = 0; i < N_SERVOS; i++) ADD("%s%.0f", i ? "," : "", cursoAtual[i]);
   ADD("],\"svl\":[");
@@ -715,17 +735,17 @@ static void webCmd() {
     if (!msg) {
       if (c == "abrir" || c == "home") {
         pede(CMD_ABRE);  // o EMG continua do estado certo
-        autoHome();
-        msg = c == "home" ? "auto-home: mao aberta" : "abrindo";
+        autoHome(true);
+        msg = c == "home" ? "auto-home (devagar): mao aberta" : "abrindo devagar";
       } else if (c == "fechar") {
         pede(CMD_FECHA);
-        fechar();
-        msg = "fechando";
+        mao(limites.flexaoMax, true);
+        msg = "fechando devagar";
       } else {
         const int i = srv.arg("i").toInt();
         if (i >= 0 && i < N_SERVOS) {
-          cursoAlvo[i] = limita(srv.arg("v").toFloat(), 0, limites.flexaoMax);
-          msg          = "servo ok";
+          alvo(i, srv.arg("v").toFloat(), true);
+          msg = "servo ok (devagar)";
         } else {
           msg = "servo invalido";
         }
@@ -786,9 +806,9 @@ static void tickPlotter() {
 
 static void imprimeEstado() {
   Serial.println(F("\n--- LimbIA / Amazing Hand (C3 + PCA9685 + 8 MG90S + MyoWare) ---"));
-  Serial.printf("MAO %s   PCA9685: %s   servos: %s\n",
-                PUB.liberada ? "LIBERADA" : "TRAVADA (calibre: cal)", pcaOk ? "ok" : "AUSENTE",
-                servosComPulso ? "com pulso" : "sem pulso (soltos)");
+  Serial.printf("MUSCULO %s   manual: sempre, devagar (%.0f graus/s)   PCA9685: %s\n",
+                PUB.liberada ? "LIBERADO" : "TRAVADO (calibre: cal)", AMZ_VEL_MANUAL_GRAUS_S,
+                pcaOk ? "ok" : "AUSENTE");
   Serial.printf("Wi-Fi aberto \"%s\" canal %d: %s, IP %s, %u aparelho(s) conectado(s)\n",
                 AMZ_WIFI_SSID, AMZ_WIFI_CANAL, wifiOk ? "NO AR" : "FALHOU",
                 WiFi.softAPIP().toString().c_str(), (unsigned)WiFi.softAPgetStationNum());
@@ -797,9 +817,13 @@ static void imprimeEstado() {
                 PUB.desliga, PUB.teto, PUB.fechada ? "FECHADA" : "aberta");
   Serial.printf("limite de flexao %.0f (teto %.0f)\n", limites.flexaoMax, AMZ_FLEXAO_TETO);
   for (uint8_t s = 0; s < N_SERVOS; s++) {
-    Serial.printf("  servo %u %-11s canal %2u  %s  curso %3.0f -> %3.0f graus abs\n", s,
-                  NOME_SERVO[s], canalServo(s), servoAtivo(s) ? "ON " : "off", cursoAtual[s],
-                  grausServo(s, cursoAtual[s]));
+    if (temPulso(s))
+      Serial.printf("  servo %u %-11s canal %2u  %s  curso %3.0f -> %3.0f graus abs\n", s,
+                    NOME_SERVO[s], canalServo(s), servoAtivo(s) ? "ON " : "off", cursoAtual[s],
+                    grausServo(s, cursoAtual[s]));
+    else
+      Serial.printf("  servo %u %-11s canal %2u  %s  sem pulso (solto)\n", s, NOME_SERVO[s],
+                    canalServo(s), servoAtivo(s) ? "ON " : "off");
   }
   Serial.println(
       F("comandos: ? cal cancela abre fecha home servo lim centro inv dedos liga raw env "
@@ -831,17 +855,17 @@ static void executa(char* linha) {
     pede(CMD_CANCELA);
   } else if (!strcmp(cmd, "abre") || !strcmp(cmd, "home")) {
     pede(CMD_ABRE);
-    autoHome();
-    Serial.println(F("mao aberta (auto-home)"));
+    autoHome(true);
+    Serial.println(F("abrindo devagar (auto-home)"));
   } else if (!strcmp(cmd, "fecha")) {
     pede(CMD_FECHA);
-    fechar();
-    Serial.println(F("fechando"));
+    mao(limites.flexaoMax, true);
+    Serial.println(F("fechando devagar"));
   } else if (!strcmp(cmd, "servo") && a1 && a2) {
     const int i = atoi(a1);
     if (i >= 0 && i < N_SERVOS) {
-      cursoAlvo[i] = limita(atof(a2), 0, limites.flexaoMax);
-      Serial.printf("servo %d (%s) -> curso %.0f\n", i, NOME_SERVO[i], cursoAlvo[i]);
+      alvo(i, atof(a2), true);
+      Serial.printf("servo %d (%s) -> curso %.0f, devagar\n", i, NOME_SERVO[i], cursoAlvo[i]);
     }
   } else if (!strcmp(cmd, "lim") && a1) {
     limites.flexaoMax = limita(atof(a1), AMZ_FLEXAO_MIN, AMZ_FLEXAO_TETO);
@@ -851,20 +875,16 @@ static void executa(char* linha) {
     if (d >= 0 && d < AMZ_N_DEDOS) {
       dedos[d].centroA = limita(atof(a2), AMZ_SERVO_MIN, AMZ_SERVO_MAX);
       dedos[d].centroB = limita(atof(a3), AMZ_SERVO_MIN, AMZ_SERVO_MAX);
-      if (PUB.liberada && pcaOk && servosComPulso && servoAtivo(2 * d)) {
-        escreveServo(2 * d);
-        escreveServo(2 * d + 1);
-      }
+      for (uint8_t s = 2 * d; s <= 2 * d + 1; s++)
+        if (pcaOk && temPulso(s)) escreveServo(s);
       Serial.printf("dedo %d centro A %.0f B %.0f\n", d, dedos[d].centroA, dedos[d].centroB);
     }
   } else if (!strcmp(cmd, "inv") && a1) {
     const int d = atoi(a1);
     if (d >= 0 && d < AMZ_N_DEDOS) {
       dedos[d].sentido = -dedos[d].sentido;
-      if (PUB.liberada && pcaOk && servosComPulso && servoAtivo(2 * d)) {
-        escreveServo(2 * d);
-        escreveServo(2 * d + 1);
-      }
+      for (uint8_t s = 2 * d; s <= 2 * d + 1; s++)
+        if (pcaOk && temPulso(s)) escreveServo(s);
       Serial.printf("dedo %d sentido %+d\n", d, dedos[d].sentido);
     }
   } else if (!strcmp(cmd, "dedos") && a1) {
@@ -886,9 +906,9 @@ static void executa(char* linha) {
   } else if (!strcmp(cmd, "i2c")) {
     diagnosticoI2C();
     pcaOk = iniciaPca();
-    Serial.println(pcaOk ? F("PCA9685 ok (servos sem pulso ate o proximo auto-home)")
+    Serial.println(pcaOk ? F("PCA9685 ok (servos sem pulso ate alguem pedir movimento)")
                          : F("PCA9685 continua ausente"));
-    if (pcaOk && PUB.liberada) autoHome();
+    if (pcaOk && PUB.liberada) autoHome(false);
   } else if (!strcmp(cmd, "t")) {
     plotter = !plotter;
   } else {
