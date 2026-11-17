@@ -518,6 +518,37 @@ aberta, qualquer pessoa no alcance também move a mão devagar, sem calibrar.
 
 ---
 
+### 2026-11-17 (3) — 5 V no V+ do PCA9685 e a mão responde
+
+**Alvo:** descobrir por que nenhum servo se movia pela página.
+
+**Previsão:** sem os 5 V no V+, os servos não têm força, mas o chip do PCA9685
+roda no VCC (3V3) e deveria responder no I2C mesmo assim. Por isso, os 5 V
+sozinhos não explicariam o timeout em todas as sondas.
+
+**O que foi feito:**
+
+- Henrique notou que o V+ do PCA9685 (5 V externos dos servos) não estava
+  ligado: a placa recebia só o 3V3 da C3.
+- O diagnóstico `i2c`, rodado antes da correção, deu timeout (código 5) nas 4
+  sondas em 0x40 e na varredura nas duas orientações, com pull-ups presentes
+  (SDA=1, SCL=1).
+- Depois de ligar os 5 V e conferir a fiação, Henrique relatou que **"deu muito
+  certo"**.
+
+**Medido:** nada por mim depois da correção. É relato da bancada, sem número
+ao lado. Ficam para medir: ângulo real de cada servo contra o pedido, sentido
+de cada par A/B fechando o dedo, e o centro de montagem.
+
+**Divergência:** a previsão dizia que os 5 V não explicariam o timeout no I2C.
+Ou a fiação também foi corrigida junto (GND, SDA/SCL), ou o módulo depende do
+V+ de um jeito que eu não esperava. Registrar qual dos dois na próxima ligação,
+com a saída do `i2c`.
+
+**Decisão:** nenhuma de firmware. O commit `9c20e62` é o estado que funcionou.
+
+---
+
 ### Próxima entrada esperada — Ensaio 1: um dedo, um motor
 
 **Alvo previsto:** montar um dedo com um motor DC no L293D e um ACS712 em série,
