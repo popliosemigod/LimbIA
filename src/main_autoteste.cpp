@@ -29,6 +29,8 @@
 #include <limbia_emg.h>
 #include <limbia_enlace.h>
 #include <limbia_mao.h>
+#include <limbia_paralelo.h>
+#include <limbia_sinal.h>
 #include <math.h>
 #include <string.h>
 
@@ -1162,6 +1164,354 @@ static void testeCustoEmg() {
 }
 
 // ---------------------------------------------------------------------
+//  [12] dedo paralelo do Amazing Hand: dois servos por dedo
+//
+//  Confere a regra lida nos gestos oficiais (Angle_1 = +flexao +
+//  abducao, Angle_2 = -flexao + abducao) contra os proprios numeros do
+//  demo, e que os limites nunca deixam um servo andar sozinho.
+// ---------------------------------------------------------------------
+static void testeParalelo() {
+  Serial.println(F("\n[12] dedo paralelo (Amazing Hand)"));
+  const DedoParalelo d  = {0, 1, 90.0f, 90.0f, +1};
+  LimitesParalelo livre = {-90.0f, 90.0f, 90.0f, 0.0f, 180.0f};
+  const float eps       = 0.01f;
+
+  // CloseHand (90, -90): flexao 90, abducao 0.
+  ParServos p = paraleloAngulos(d, 90, 0, livre);
+  checa(fabsf(p.a - 180) < eps && fabsf(p.b - 0) < eps, "CloseHand = (90,-90)");
+  // OpenHand (-35, 35): flexao -35.
+  p = paraleloAngulos(d, -35, 0, livre);
+  checa(fabsf(p.a - 55) < eps && fabsf(p.b - 125) < eps, "OpenHand = (-35,35)");
+  // Spread do indicador (4, 90): flexao -43, abducao +47.
+  p = paraleloAngulos(d, -43, 47, livre);
+  checa(fabsf(p.a - 94) < eps && fabsf(p.b - 180) < eps, "Spread indicador = (4,90)");
+  // Os dois servos sempre em sentidos opostos quando so ha flexao.
+  p = paraleloAngulos(d, 37, 0, livre);
+  checa(fabsf((p.a - 90) + (p.b - 90)) < eps, "flexao pura: soma dos desvios = 0");
+
+  // Fase 1 da bancada: flexao 0..90, abducao travada.
+  const LimitesParalelo fase1 = {0.0f, 90.0f, 0.0f, 0.0f, 180.0f};
+  p                           = paraleloAngulos(d, 0, 0, fase1);
+  checa(fabsf(p.a - 90) < eps && fabsf(p.b - 90) < eps, "flexao 0 = os dois no centro");
+  p = paraleloAngulos(d, 150, 0, fase1);
+  checa(fabsf(p.a - 180) < eps && fabsf(p.b - 0) < eps && !p.saturou, "pedido 150 vira 90");
+  p = paraleloAngulos(d, -30, 0, fase1);
+  checa(fabsf(p.a - 90) < eps && fabsf(p.b - 90) < eps, "extensao travada em 0");
+  p = paraleloAngulos(d, 45, 30, fase1);
+  checa(fabsf((p.a - 90) + (p.b - 90)) < eps, "abducao travada: nao torce o dedo");
+
+  // Sentido invertido troca os papeis.
+  const DedoParalelo inv = {0, 1, 90.0f, 90.0f, -1};
+  p                      = paraleloAngulos(inv, 60, 0, fase1);
+  checa(fabsf(p.a - 30) < eps && fabsf(p.b - 150) < eps, "sentido -1 espelha a flexao");
+
+  // Centro deslocado: saturacao avisada, nao escondida.
+  const DedoParalelo torto = {0, 1, 120.0f, 60.0f, +1};
+  p                        = paraleloAngulos(torto, 90, 0, fase1);
+  checa(p.saturou && p.a == 180.0f && fabsf(p.b - 0) < eps, "centro 120 + 90 satura em 180");
+
+  // Pulso: MG90S 500..2400 us a 50 Hz.
+  checa(fabsf(servoGrausParaUs(90, 500, 2400) - 1450) < eps, "90 graus = 1450 us");
+  checa(usParaTicksPca(1500, 50) == 307, "1500 us = 307 ticks a 50 Hz");
+  checa(usParaTicksPca(500, 50) == 102, "500 us = 102 ticks");
+
+  // Rampa: nunca passa do alvo.
+  checa(rampa(0, 90, 1.8f) == 1.8f && rampa(89, 90, 1.8f) == 90.0f, "rampa limita o passo");
+
+  // Ativacao: histerese e tempo minimo.
+  ParametrosAtivacao pa = {100.0f, 60.0f, 80, 250};
+  Ativacao a;
+  ativacaoZera(&a);
+  ativacaoAtualiza(&a, 150, 0, pa);
+  ativacaoAtualiza(&a, 150, 50, pa);
+  checa(!a.ativo, "pico de 50 ms nao ativa");
+  ativacaoAtualiza(&a, 150, 80, pa);
+  checa(a.ativo, "80 ms acima ativa");
+  ativacaoAtualiza(&a, 80, 100, pa);  // dentro da histerese
+  ativacaoAtualiza(&a, 80, 600, pa);
+  checa(a.ativo, "entre desliga e liga segura o estado");
+  ativacaoAtualiza(&a, 30, 700, pa);
+  ativacaoAtualiza(&a, 30, 949, pa);
+  checa(a.ativo, "solta so depois de 250 ms");
+  ativacaoAtualiza(&a, 30, 950, pa);
+  checa(!a.ativo, "250 ms abaixo solta");
+
+  // Limiares do repouso.
+  EstatRepouso e;
+  repousoZera(&e);
+  for (int i = 0; i < 1000; i++) repousoInclui(&e, (i & 1) ? 22.0f : 18.0f);  // media 20, desvio 2
+  float liga, desliga;
+  limiaresDoRepouso(e, 6.0f, 2.0f, 15.0f, &liga, &desliga);
+  checa(fabsf(liga - 40) < 0.1f && fabsf(desliga - 30) < 0.1f, "repouso 20+-2 -> liga 40 (razao)");
+  limiaresDoRepouso(e, 15.0f, 2.0f, 15.0f, &liga, &desliga);
+  checa(fabsf(liga - 50) < 0.1f, "desvio grande manda no limiar");
+  Serial.printf("     repouso 20+-2: liga %.1f desliga %.1f\n", liga, desliga);
+}
+
+// ---------------------------------------------------------------------
+//  [13] filtro a prova de ruido e comando alternado (limbia_sinal)
+//
+//  Sinal sintetico com o que ja apareceu na bancada: rede de 60 Hz,
+//  espigoes de mau contato, pancada no eletrodo. Mede que o ruido nao
+//  troca o estado da mao e que a contracao de verdade troca UMA vez.
+// ---------------------------------------------------------------------
+static uint32_t sementeSinal = 12345;
+static float ruido() {  // uniforme em [-1, 1], deterministico
+  sementeSinal = sementeSinal * 1664525u + 1013904223u;
+  return (float)(sementeSinal >> 8) / 8388608.0f - 1.0f;
+}
+
+static ParametrosFiltro filtroSig() {
+  ParametrosFiltro p = {1000.0f, false, 4.0f, 40.0f, 20.0f, 60.0f, 8.0f, 5.0f, 25.0f};
+  return p;
+}
+
+// Sinal SIG do MyoWare: repouso 86, contracao `nivel`, rede e espigoes.
+static float sinalSig(uint32_t t, bool contrai, float nivel, float rede, bool espigoes) {
+  float x = contrai ? nivel : 86.0f;
+  x += rede * sinf(2.0f * 3.14159265f * 60.0f * t / 1000.0f);
+  x += 3.0f * ruido();
+  // Espigao a cada 97 ms, alternando +2500 (mau contato) e -80 (pequeno:
+  // o Hampel nem precisa tocar, o envelope engole).
+  if (espigoes && (t % 97) == 0) x += ((t / 97) % 2) ? 2500.0f : -80.0f;
+  return x < 0 ? 0 : (x > 4095 ? 4095 : x);
+}
+
+static void testeSinal() {
+  Serial.println(F("\n[13] filtro a prova de ruido e comando alternado"));
+
+  // --- Hampel
+  Hampel5 h;
+  hampelZera(&h);
+  float maior = 0;
+  for (int i = 0; i < 200; i++) {
+    float x = 100;
+    if (i == 50) x = 3000;               // espigao de 1 amostra
+    if (i == 120 || i == 121) x = 3000;  // espigao de 2 amostras
+    const float y = hampelPassa(&h, x, 4.0f, 40.0f);
+    if (y > maior) maior = y;
+  }
+  checa(maior < 101, "Hampel remove espigoes de 1 e 2 amostras");
+  hampelZera(&h);
+  float y = 0;
+  for (int i = 0; i < 100; i++) y = hampelPassa(&h, 100.0f + i * 10.0f, 4.0f, 40.0f);  // rampa
+  checa(fabsf(y - 1090.0f) < 0.01f, "Hampel nao mexe em subida de musculo");
+
+  // --- Filtro SIG com rede forte e espigoes, braco parado. Rede de 120 pp
+  // (a medida em 12/11 foi desvio < 1): mais que isso em cima de um
+  // repouso de 86 recorta em 0 no ADC, e o nivel medio sobe de verdade -
+  // isso e fisica do recorte, nao erro do filtro.
+  ParametrosFiltro pf = filtroSig();
+  FiltroEmg f;
+  filtroConfigura(&f, pf);
+  float envMin = 1e9f, envMax = 0;
+  for (uint32_t t = 0; t < 4000; t++) {
+    const float e = filtroPassa(&f, sinalSig(t, false, 0, 60.0f, true), pf);
+    if (t > 1000) {
+      if (e < envMin) envMin = e;
+      if (e > envMax) envMax = e;
+    }
+  }
+  Serial.printf("     repouso com rede 120 pp e espigao de 2500: envelope %.1f..%.1f (real 86)\n",
+                envMin, envMax);
+  checa(envMax < 92 && envMin > 80, "rede + espigoes nao tiram o envelope do repouso");
+  const uint32_t grandes = (4000 / 97 + 1) / 2;  // os de +2500
+  Serial.printf("     Hampel trocou %lu amostras (%lu espigoes grandes no sinal)\n",
+                (unsigned long)f.hampel.trocadas, (unsigned long)grandes);
+  checa(f.hampel.trocadas >= grandes - 1, "Hampel pegou todos os espigoes grandes");
+
+  // --- Tempo de resposta a uma contracao de verdade
+  filtroConfigura(&f, pf);
+  uint32_t cruzou = 0;
+  for (uint32_t t = 0; t < 3000; t++) {
+    const bool c  = t >= 1000;
+    const float e = filtroPassa(&f, sinalSig(t, c, 900.0f, 60.0f, true), pf);
+    if (c && !cruzou && e > 400.0f) cruzou = t - 1000;
+  }
+  Serial.printf("     contracao 86 -> 900: envelope passa de 400 em %lu ms\n",
+                (unsigned long)cruzou);
+  checa(cruzou > 0 && cruzou < 200, "contracao aparece em menos de 200 ms");
+
+  // --- Cadeia inteira: filtro + comando alternado
+  ParametrosAlterna pa;
+  pa.ativ.liga    = 400;
+  pa.ativ.desliga = 250;
+  pa.ativ.ligaMs  = 80;
+  pa.ativ.soltaMs = 200;
+  pa.refratarioMs = 800;
+  pa.tetoArtefato = 0;
+  // Roteiro: (inicio_ms, fim_ms, nivel) das contracoes.
+  struct Trecho {
+    uint32_t de, ate;
+    float nivel;
+  };
+  const Trecho roteiro[] = {
+      {1000, 2000, 900},     // 1: fecha
+      {3500, 4500, 900},     // 2: abre
+      {6000, 10000, 900},    // 3: segura 4 s -> fecha UMA vez so
+      {11000, 11400, 900},   // 4: abre
+      {11700, 12000, 900},   // 5: 300 ms depois de soltar -> refratario, ignorada
+      {13500, 13540, 3000},  // 6: 40 ms de pancada: curta demais para valer
+  };
+  // Espigao na PRIMEIRA amostra: pre-aquecer com ela fechava a mao
+  // sozinha no boot. Pelo nivel medio, nao fecha.
+  DetectorAlterna d;
+  for (int modo = 0; modo < 2; modo++) {
+    filtroConfigura(&f, pf);
+    if (modo == 1) filtroPreaquece(&f, 86.0f, pf);
+    alternaZera(&d, false);
+    for (uint32_t t = 0; t < 2000; t++) {
+      const float e = filtroPassa(&f, t == 0 ? 3000.0f : 86.0f, pf);
+      alternaAtualiza(&d, e, f.rapido, t, pa);
+    }
+    // modo 0: mesmo pre-aquecendo COM o espigao, a regra da duracao no
+    // envelope rapido rejeita (curta). Duas camadas, cada uma basta.
+    checa(!d.fechada, modo == 0 ? "espigao no boot: a regra da duracao segura sozinha"
+                                : "espigao no boot: o pre-aquecimento pela media segura sozinho");
+    if (modo == 0) checa(d.rejeitadas == 1 && d.motivo == REJ_CURTA, "  ...rejeitado como curto");
+  }
+
+  // Como o firmware: regime pela media dos primeiros 300 ms.
+  filtroConfigura(&f, pf);
+  float media = 0;
+  for (uint32_t t = 0; t < 300; t++) media += sinalSig(t, false, 0, 60.0f, true) / 300.0f;
+  filtroPreaquece(&f, media, pf);
+  alternaZera(&d, false);
+  uint8_t fechou = 0, abriu = 0, rejeitou = 0, curtas = 0, refratarias = 0;
+  for (uint32_t t = 0; t < 16000; t++) {
+    bool c      = false;
+    float nivel = 0;
+    for (const Trecho& r : roteiro)
+      if (t >= r.de && t < r.ate) {
+        c     = true;
+        nivel = r.nivel;
+      }
+    const float e          = filtroPassa(&f, sinalSig(t, c, nivel, 60.0f, true), pf);
+    const EventoAlterna ev = alternaAtualiza(&d, e, f.rapido, t, pa);
+    if (ev == ALT_FECHOU) fechou++;
+    if (ev == ALT_ABRIU) abriu++;
+    if (ev == ALT_REJEITOU) {
+      rejeitou++;
+      if (d.motivo == REJ_CURTA) curtas++;
+      if (d.motivo == REJ_REFRATARIO) refratarias++;
+    }
+  }
+  Serial.printf("     roteiro de 6 contracoes: fechou %u, abriu %u, ignorou %u, mao %s\n", fechou,
+                abriu, rejeitou, d.fechada ? "fechada" : "aberta");
+  checa(fechou == 2 && abriu == 2, "contrai fecha, contrai abre - e segurar nao repete");
+  checa(refratarias == 1, "contracao no refratario e ignorada");
+  checa(curtas == 1 && rejeitou == 2, "pancada de 40 ms e ignorada (curta)");
+  checa(!d.fechada, "termina aberta");
+
+  // Pancada com teto calibrado: rejeitada mesmo durando o bastante.
+  pa.tetoArtefato = 1500;
+  filtroConfigura(&f, pf);
+  filtroPreaquece(&f, 86.0f, pf);
+  alternaZera(&d, false);
+  uint8_t trocas = 0;
+  for (uint32_t t = 0; t < 3000; t++) {
+    const bool c  = t >= 1000 && t < 1300;
+    const float e = filtroPassa(&f, sinalSig(t, c, 4095, 0, false), pf);
+    if (alternaAtualiza(&d, e, f.rapido, t, pa) == ALT_FECHOU) trocas++;
+  }
+  checa(trocas == 0 && d.rejeitadas == 1 && d.motivo == REJ_PANCADA,
+        "pancada acima do teto nao troca o estado");
+
+  // --- Calibracao guiada, adaptativa e com prova (a que destrava a mao)
+  //  0: faz certo                      -> ok, prova 3/3 sem falso
+  //  1: nao contrai nunca              -> recusa (nao se separa)
+  //  2: 1a contracao fraca, depois boas -> ok: ela INSISTE ate ter 3 seguidas
+  //  3: contrai no relaxe da 1a prova  -> prova falha, aprende de novo, ok na 2a
+  //  4: picos alternando 300 e 1500    -> recusa (irregulares)
+  const TemposCal tc = {3000,  4000,  2000, 3000, 500,  3,    10, 3,  3,
+                        0.35f, 0.15f, 6.0f, 1.5f, 2.5f, 4.0f, 80, 200};
+  for (int cenario = 0; cenario < 5; cenario++) {
+    filtroConfigura(&f, pf);
+    filtroPreaquece(&f, 86.0f, pf);
+    CalibracaoGuiada cal;
+    calInicia(&cal, 0);
+    uint32_t t        = 0;
+    uint8_t pedidas   = 0;  // contracoes pedidas no aprendizado
+    bool contavaAntes = false;
+    while (calEmAndamento(cal) && t < 400000) {
+      const uint32_t dj  = t - cal.etapaDesdeMs;
+      const bool janela  = dj > 300 && dj < 1800;
+      const bool aprende = cal.etapa == CAL_CONTRAIA;
+      const bool prova   = cal.etapa == CAL_PROVA_CONTRAIA;
+      bool c             = (aprende || prova) && janela;
+      float nivel        = 900.0f;
+      if (aprende && !contavaAntes) pedidas++;
+      contavaAntes = aprende;
+      if (cenario == 1) c = false;
+      if (cenario == 2 && aprende && pedidas == 1) nivel = 95.0f;  // fraquinha
+      if (cenario == 3 && cal.etapa == CAL_PROVA_RELAXE && cal.r.provas == 0 && dj > 800 &&
+          dj < 2000)
+        c = true;  // disparo com o braco "relaxado"
+      if (cenario == 4) nivel = (pedidas % 2) ? 300.0f : 1500.0f;
+      const float e = filtroPassa(&f, sinalSig(t, c, nivel, 60.0f, true), pf);
+      calAtualiza(&cal, e, f.rapido, t, tc);
+      t++;
+    }
+    const ResultadoCal& r = cal.r;
+    Serial.printf(
+        "     calibracao %d: %s%s%s - %u tentativas, prova %u/3 (%u falsas, %u provas), "
+        "liga %.0f desliga %.0f, %.0f s\n",
+        cenario, calNomeEtapa(cal.etapa), cal.motivo[0] ? " - " : "", cal.motivo, cal.ciclo,
+        r.acertos, r.falsos, r.provas, r.liga, r.desliga, t / 1000.0f);
+    switch (cenario) {
+      case 0:
+        checa(cal.etapa == CAL_OK && r.acertos == 3 && r.falsos == 0 && r.provas == 1,
+              "calibracao certa: aprovada na 1a prova");
+        checa(r.liga > r.desliga && r.desliga > r.repouso && r.liga < r.contracao,
+              "repouso < desliga < liga < contracao");
+        checa(t > 34000 && t < 40000, "caminho mais curto dura ~37 s");
+        break;
+      case 1:
+        checa(cal.etapa == CAL_FALHOU && cal.ciclo == 10, "sem contracao: recusa depois de 10");
+        break;
+      case 2:
+        checa(cal.etapa == CAL_OK && cal.ciclo == 4, "contracao fraca: insiste e aprova em 4");
+        break;
+      case 3:
+        checa(cal.etapa == CAL_OK && r.provas == 2, "disparo no relaxe: reprova e aprova depois");
+        break;
+      case 4:
+        checa(cal.etapa == CAL_FALHOU && !strcmp(cal.motivo, "contracoes irregulares"),
+              "contracoes irregulares: recusa");
+        break;
+    }
+  }
+
+  // --- RAW: contracao como rajada de ruido em torno do meio da escala
+  ParametrosFiltro pr = pf;
+  pr.entradaBruta     = true;
+  pr.hampelPiso       = 400.0f;
+  filtroConfigura(&f, pr);
+  float repouso = 0, contr = 0;
+  for (uint32_t t = 0; t < 6000; t++) {
+    const bool c = t >= 3000;
+    float x      = 2048 + 500.0f * sinf(2.0f * 3.14159265f * 60.0f * t / 1000.0f) +
+              (c ? 300.0f : 15.0f) * ruido();
+    const float e = filtroPassa(&f, x, pr);
+    if (t > 2000 && t < 3000) repouso += e / 1000.0f;
+    if (t > 4000 && t < 5000) contr += e / 1000.0f;
+  }
+  Serial.printf("     RAW com rede de 1000 pp: repouso %.1f, contracao %.1f (%.0fx)\n", repouso,
+                contr, contr / (repouso > 0.1f ? repouso : 0.1f));
+  checa(contr > 8.0f * repouso, "RAW: rede filtrada, contracao separa 8x do repouso");
+
+  // --- Custo no processador que vai rodar
+  filtroConfigura(&f, pf);
+  volatile float acc = 0;
+  const uint32_t t0  = micros();
+  for (uint32_t t = 0; t < 5000; t++) acc = acc + filtroPassa(&f, 86.0f + (t % 13), pf);
+  const float us = (float)(micros() - t0) / 5000.0f;
+  Serial.printf("     filtro completo: %.1f us por amostra (%.1f%% do C3 a 1 kHz)\n", us,
+                us / 10.0f);
+  checa(us < 200.0f, "filtro cabe folgado em 1 ms");
+}
+
+// ---------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
   delay(500);
@@ -1185,6 +1535,8 @@ void setup() {
   testeDecisor();
   testeEnlace();
   testeCustoEmg();
+  testeParalelo();
+  testeSinal();
   const uint32_t dt = millis() - t0;
 
   Serial.println(F("\n====================================================="));
