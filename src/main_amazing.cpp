@@ -669,7 +669,16 @@ static void pede(TipoCmd t, float a = 0, float b = 0) {
 // Movimento MANUAL (desenvolvedor) vale sempre, travada ou nao; so precisa
 // do PCA9685. Devolve a mensagem de recusa, ou nullptr.
 static const char* podeMover() {
-  if (!pcaOk) return "PCA9685 ausente: confira a fiacao e use i2c no console";
+  // PCA ausente: tenta de novo na hora do pedido manual (o PCA pode ter sido
+  // ligado ou consertado depois do boot). No maximo uma vez a cada 3 s:
+  // com o barramento ruim cada tentativa trava o loop por ~1 s (12/11).
+  static uint32_t ultimaTentativaMs = 0;
+  if (!pcaOk && millis() - ultimaTentativaMs >= 3000) {
+    ultimaTentativaMs = millis();
+    pcaOk             = iniciaPca();
+    if (pcaOk) Serial.println(F("PCA9685 encontrado: controle manual ativo"));
+  }
+  if (!pcaOk) return "PCA9685 ausente: confira GND, VCC, SDA (GPIO6) e SCL (GPIO7)";
   return nullptr;
 }
 

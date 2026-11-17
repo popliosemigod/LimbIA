@@ -155,8 +155,8 @@ function atualiza(j){
  if(j.res){const r=j.res;$('res').innerHTML='repouso '+r.rep.toFixed(1)+' &plusmn; '+r.dsv.toFixed(1)+
   ' &middot; contra&ccedil;&atilde;o '+r.con.toFixed(1)+' &middot; disparo '+r.liga.toFixed(1)+' &middot; solta '+r.desl.toFixed(1)+
   ' &middot; prova '+r.ac+' reconhecidas, '+r.fa+' falsas'+(k.e=='falhou'?'<br><span class="ruim">Recusada: '+k.m+'. A m&atilde;o continua travada.</span>':'')}
- document.querySelectorAll('.mov').forEach(b=>b.disabled=!j.pca);
- for(let i=0;i<8;i++){const s=$('s'+i);s.max=j.lim;s.disabled=!j.pca||!j.svl[i];
+ document.querySelectorAll('.mov').forEach(b=>b.disabled=false);
+ for(let i=0;i<8;i++){const s=$('s'+i);s.max=j.lim;s.disabled=false;
   if(Date.now()-mexeu[i]>1500){s.value=j.sv[i];$('v'+i).innerHTML=(j.pul>>i&1)?j.sv[i]+'&deg;':'solto'}}
  const p0=j.s-j.p.length;
  j.p.forEach((p,i)=>{pts.push({e:p[1]/10,c:p[2]&1});
