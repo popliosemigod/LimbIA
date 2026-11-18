@@ -97,31 +97,37 @@ entregue é **"compila e a lógica foi medida"**, dito com essas palavras.
 "Testado" só aparece depois do ensaio com servo ligado, no diário, com o número
 medido ao lado do previsto.
 
-## O hardware da bancada (decidido em 13/09/2026)
+## O hardware da bancada (desde 12/11/2026)
 
-A prótese tem **duas placas**: a **mão** numa ESP32 DevKit V1 e o **EMG** num
-ESP32-C3 SuperMini, ligadas pela rede Wi-Fi da própria prótese (UDP), com tela de
-ajuste e OTA nas duas. Ver [`docs/06-rede-tela-e-ota.md`](docs/06-rede-tela-e-ota.md).
+A versão que está dando certo é a **Amazing Hand** (Pollen Robotics) com **oito
+MG90S** num **PCA9685**, dois servos por dedo, e um **MyoWare** numa **ESP32-C3
+SuperMini**. Uma placa só, ambiente `amazing_c3`. Tudo em
+[`docs/08-amazing-hand.md`](docs/08-amazing-hand.md); o README do GitHub fala
+desta versão e só menciona as anteriores.
 
-A mão é a do **LAD**: quatro dedos longos com **motores DC** em dois L293D, dois
-servos no polegar, seis ACS712. Motor DC não tem posição, então ela é **estimada
-pelo tempo de acionamento** e se re-zera a cada abertura completa. A variante de
-sete servos no PCA9685 continua compilando (`LIMBIA_MAO_LAD=0`), mas não é a da
+- **Dois servos por dedo:** A = centro + flexão + abdução, B = centro − flexão +
+  abdução. Mesmo ângulo nos dois torce o dedo.
+- **O músculo só comanda depois da calibração com prova.** O manual (página e
+  console) vale sempre, devagar.
+- **O V+ do PCA9685 precisa de 5 V externos.** Sem eles, nada se move (foi o que
+  segurou a mão até 17/11).
+
+A versão anterior, de **duas placas** (mão LAD com motores DC, L293D e ACS712 na
+DevKit V1, EMG na C3, UDP entre elas), continua compilando (`esp32dev`, `emg`) e
+está registrada nos `docs/01` a `07` e na tag `pausa-2026-10`. Não é a da
 bancada.
 
 ## Dívidas em aberto, e elas importam
 
-1. **Nenhum motor foi ligado e nenhum eletrodo tocou pele.** Todos os números
-   vêm de casos sintéticos e de estado trafegando entre duas placas. Não afirmar
-   que a mão agarra, nem que o EMG move a mão.
-2. **Os limiares de corrente são chute educado.** `CORRENTE_CONTATO_MA`,
-   `CORRENTE_LIMITE_MA` e `CORRENTE_FOLGA_MA` dependem do motor, do atrito e de
-   quanto o tendão já esticou. Com motor DC entram junto `VELOCIDADE_DEDO` e
-   `ARRANQUE_CEGO_MS`, que também são chute.
-3. **Os limiares de qualidade do eletrodo vieram de sinal sintético** — d' ≥ 2,5
-   e razão ≥ 3×. Só um antebraço de verdade diz se separam bem de mal posicionado.
-4. **A posição dos dedos longos é estimativa, não medida.** Dizer isso com essas
-   palavras em qualquer número que dependa dela, inclusive a forma do objeto.
+1. **A mão se moveu pela página em 17/11, mas nenhum ângulo foi medido** e
+   nenhum eletrodo comandou a mão. Não afirmar que o EMG move a mão.
+2. **Sentido e centro de cada par A/B ainda não foram conferidos** no dedo
+   montado. A regra dos dois servos foi deduzida dos gestos oficiais.
+3. **Os limiares de calibração do EMG vieram de sinal sintético** (separação
+   ≥ 6σ, razão ≥ 1,5, consistência ≤ 2,5×). Só um antebraço de verdade diz se
+   eles separam contração de ruído.
+4. **Na versão de duas placas**, os limiares de corrente são chute e a posição
+   dos dedos longos é estimativa, não medida.
 
 ## Convenção de commits
 
